@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>BFRB Detection System — Wireframe</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+
+    body { background: #f0f2f5; color: #222; }
+
+    /* ── TOP LABEL ── */
+    .wireframe-label {
+      background: #1a1a2e; color: #fff;
+      text-align: center; padding: 8px;
+      font-size: 13px; letter-spacing: 1px;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: #16213e;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 52px;
+    }
+    nav .logo { color: #e94560; font-size: 18px; font-weight: bold; }
+    nav ul { list-style: none; display: flex; gap: 28px; }
+    nav ul li a {
+      color: #ccc; text-decoration: none; font-size: 14px;
+      padding: 6px 0; border-bottom: 2px solid transparent;
+    }
+    nav ul li a.active { color: #e94560; border-bottom: 2px solid #e94560; }
+    nav .user-pill {
+      background: #0f3460; color: #fff; border-radius: 20px;
+      padding: 4px 14px; font-size: 13px;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    .page { display: grid; grid-template-columns: 1fr 340px; gap: 16px; padding: 16px 20px; }
+
+    /* ── LEFT COLUMN ── */
+    .left { display: flex; flex-direction: column; gap: 14px; }
+
+    /* Video / Upload card */
+    .card {
+      background: #fff; border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.09); overflow: hidden;
+    }
+    .card-header {
+      background: #16213e; color: #fff;
+      padding: 10px 16px; font-size: 14px; font-weight: bold;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .card-header .badge {
+      background: #e94560; font-size: 11px; border-radius: 10px;
+      padding: 2px 8px; margin-left: auto;
+    }
+    .card-body { padding: 14px; }
+
+    /* Video placeholder */
+    .video-box {
+      background: #111827; border-radius: 8px;
+      width: 100%; aspect-ratio: 16/9;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    .video-box .cam-icon { font-size: 52px; opacity: .25; }
+    .video-box .cam-label { color: #6b7280; margin-top: 8px; font-size: 14px; }
+
+    /* Skeleton overlay hint */
+    .skeleton-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    /* Simulated landmark dots */
+    .dot {
+      position: absolute; width: 8px; height: 8px;
+      border-radius: 50%; background: #22c55e;
+    }
+    .line {
+      position: absolute; background: rgba(34,197,94,.5);
+      height: 2px; transform-origin: left center;
+    }
+
+    /* Detection label chip */
+    .detection-chip {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(233,69,96,.85); color: #fff;
+      border-radius: 6px; padding: 4px 12px; font-size: 13px; font-weight: bold;
+    }
+
+    /* Controls row */
+    .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .btn {
+      border: none; border-radius: 6px; padding: 8px 18px;
+      font-size: 13px; cursor: pointer; font-weight: bold;
+    }
+    .btn-primary { background: #e94560; color: #fff; }
+    .btn-secondary { background: #0f3460; color: #fff; }
+    .btn-outline { background: transparent; border: 2px solid #ccc; color: #555; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+    /* Input tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 12px; }
+    .tab {
+      flex: 1; text-align: center; padding: 7px;
+      border: 1px solid #ddd; font-size: 13px; cursor: pointer;
+      background: #f9f9f9; color: #777;
+    }
+    .tab.active { background: #16213e; color: #fff; border-color: #16213e; }
+    .tab:first-child { border-radius: 6px 0 0 6px; }
+    .tab:last-child { border-radius: 0 6px 6px 0; }
+
+    /* BFRB types table */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f1f5f9; padding: 8px 10px; text-align: left; font-weight: bold; color: #555; }
+    td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #fafafa; }
+    .pill {
+      display: inline-block; border-radius: 10px; padding: 2px 9px; font-size: 11px; font-weight: bold;
+    }
+    .pill-built-in { background: #dbeafe; color: #1d4ed8; }
+    .pill-custom { background: #dcfce7; color: #15803d; }
+
+    /* ── RIGHT COLUMN ── */
+    .right { display: flex; flex-direction: column; gap: 14px; }
+
+    /* Live detection feed */
+    .detection-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid #f0f0f0;
+    }
+    .detection-row:last-child { border-bottom: none; }
+    .det-icon {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .det-icon.high { background: #fee2e2; }
+    .det-icon.med  { background: #fef9c3; }
+    .det-icon.low  { background: #f0fdf4; }
+    .det-info { flex: 1; }
+    .det-name { font-size: 13px; font-weight: bold; }
+    .det-time { font-size: 11px; color: #999; }
+    .det-conf { font-size: 12px; font-weight: bold; }
+    .conf-high { color: #dc2626; }
+    .conf-med  { color: #d97706; }
+    .conf-low  { color: #16a34a; }
+
+    /* Confidence bar */
+    .conf-bar-wrap { background: #f0f0f0; border-radius: 4px; height: 5px; margin-top: 3px; }
+    .conf-bar { height: 5px; border-radius: 4px; }
+    .conf-bar.high { background: #dc2626; }
+    .conf-bar.med  { background: #d97706; }
+    .conf-bar.low  { background: #16a34a; }
+
+    /* Stats row */
+    .stats-row { display: flex; gap: 10px; }
+    .stat-box {
+      flex: 1; background: #fff; border-radius: 10px; padding: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.07); text-align: center;
+    }
+    .stat-num { font-size: 24px; font-weight: bold; color: #16213e; }
+    .stat-lbl { font-size: 11px; color: #999; margin-top: 2px; }
+
+    /* Add BFRB form placeholder */
+    .form-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .form-input {
+      flex: 1; border: 1px solid #ddd; border-radius: 6px;
+      padding: 7px 10px; font-size: 13px; color: #aaa; background: #fafafa;
+    }
+    .form-note { font-size: 11px; color: #999; margin-top: 4px; }
+
+    /* Annotation */
+    .annotation {
+      border: 1.5px dashed #e94560; border-radius: 6px;
+      background: rgba(233,69,96,.04);
+      padding: 6px 10px; font-size: 11px; color: #e94560;
+      margin-top: 6px;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center; color: #aaa; font-size: 12px;
+      padding: 16px; margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="wireframe-label">
+  WIREFRAME — BFRB Detection System &nbsp;|&nbsp; ENEB453 Final Project &nbsp;|&nbsp; Nishanth S.
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">&#9676; BFRB Detect</div>
+  <ul>
+    <li><a href="#" class="active">Dashboard</a></li>
+    <li><a href="#">Sessions</a></li>
+    <li><a href="#">BFRB Types</a></li>
+    <li><a href="#">Reports</a></li>
+  </ul>
+  <div class="user-pill">Nishanth S.</div>
+</nav>
+
+<!-- STATS ROW -->
+<div style="padding: 14px 20px 0;">
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-num">12</div>
+      <div class="stat-lbl">Sessions Today</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">47</div>
+      <div class="stat-lbl">Detections Today</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">5</div>
+      <div class="stat-lbl">BFRB Types</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">82%</div>
+      <div class="stat-lbl">Avg Confidence</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN PAGE -->
+<div class="page">
+
+  <!-- ── LEFT ── -->
+  <div class="left">
+
+    <!-- Video Input Card -->
+    <div class="card">
+      <div class="card-header">
+        &#127909; Live Detection Feed
+        <span class="badge">● LIVE</span>
+      </div>
+      <div class="card-body">
+
+        <div class="tabs">
+          <div class="tab active">Webcam</div>
+          <div class="tab">Upload Video (MP4)</div>
+        </div>
+
+        <!-- Video placeholder with simulated MediaPipe overlay -->
+        <div class="video-box">
+          <div class="cam-icon">&#128247;</div>
+          <div class="cam-label">Webcam feed appears here — MediaPipe landmarks overlaid in real-time</div>
+
+          <!-- Simulated skeleton dots (purely illustrative) -->
+          <div class="skeleton-overlay">
+            <!-- Head area -->
+            <div class="dot" style="top:22%; left:48%; background:#22c55e;"></div>
+            <div class="dot" style="top:28%; left:45%; background:#22c55e;"></div>
+            <div class="dot" style="top:28%; left:52%; background:#22c55e;"></div>
+            <!-- Right hand near head -->
+            <div class="dot" style="top:24%; left:56%; background:#f59e0b;"></div>
+            <div class="dot" style="top:21%; left:60%; background:#f59e0b;"></div>
+            <div class="dot" style="top:18%; left:58%; background:#f59e0b;"></div>
+            <!-- Wrist -->
+            <div class="dot" style="top:32%; left:62%; background:#f59e0b;"></div>
+            <!-- connection lines (approximate) -->
+            <div class="line" style="top:23%; left:49%; width:60px; transform: rotate(10deg);background:rgba(34,197,94,.3);"></div>
+            <div class="line" style="top:24%; left:56%; width:50px; transform: rotate(-30deg);background:rgba(245,158,11,.3);"></div>
+          </div>
+
+          <!-- Active detection label -->
+          <div class="detection-chip">&#9888; Hair Pulling — 89%</div>
+        </div>
+
+        <div class="annotation">
+          MediaPipe Holistic tracks hand landmarks + face mesh. When a hand landmark is within a
+          distance threshold of a face/scalp landmark, the system fires a detection event.
+        </div>
+
+        <div class="controls" style="margin-top: 12px;">
+          <button class="btn btn-primary">&#9654; Start Detection</button>
+          <button class="btn btn-secondary">&#9646;&#9646; Pause</button>
+          <button class="btn btn-outline">&#128190; Save Session</button>
+          <button class="btn btn-outline btn-sm">&#9654; Play from file</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- BFRB Types Management Card -->
+    <div class="card">
+      <div class="card-header">
+        &#127758; BFRB Type Management
+        <span class="badge" style="background:#0f3460;">Manage</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Add new BFRB form -->
+        <div class="form-row">
+          <input class="form-input" type="text" placeholder="New BFRB name (e.g., Cheek Biting)" readonly />
+          <input class="form-input" type="text" placeholder="Description..." readonly />
+          <button class="btn btn-primary btn-sm">+ Add</button>
+        </div>
+        <div class="form-note">
+          Adding a new type stores it in the database. You can then define the landmark detection rules
+          (which hand and face landmarks to watch, distance threshold) in the rules editor.
+        </div>
+
+        <div style="margin-top: 12px;">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Behavior</th>
+                <th>Source</th>
+                <th>Landmark Rule</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><strong>Hair Pulling</strong></td>
+                <td><span class="pill pill-built-in">Built-in</span></td>
+                <td>Hand tip → Scalp region (&lt; 40px)</td>
+                <td><button class="btn btn-outline btn-sm">Edit</button></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><strong>Nail Biting</strong></td>
+                <td><span class="pill pill-built-in">Built-in</span></td>
+                <td>Finger tip → Mouth region (&lt; 35px)</td>
+                <td><button class="btn btn-outline btn-sm">Edit</button></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td><strong>Skin Picking (Face)</strong></td>
+                <td><span class="pill pill-built-in">Built-in</span></td>
+                <td>Index tip → Cheek/forehead (&lt; 30px)</td>
+                <td><button class="btn btn-outline btn-sm">Edit</button></td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td><strong>Nose Picking</strong></td>
+                <td><span class="pill pill-built-in">Built-in</span></td>
+                <td>Index tip → Nose tip (&lt; 25px)</td>
+                <td><button class="btn btn-outline btn-sm">Edit</button></td>
+              </tr>
+              <tr>
+                <td>5</td>
+                <td><strong>Lip Picking</strong></td>
+                <td><span class="pill pill-built-in">Built-in</span></td>
+                <td>Thumb tip → Lip region (&lt; 30px)</td>
+                <td><button class="btn btn-outline btn-sm">Edit</button></td>
+              </tr>
+              <tr>
+                <td>6</td>
+                <td><strong>Cheek Biting</strong></td>
+                <td><span class="pill pill-custom">Custom</span></td>
+                <td>Index tip → Cheek corner (&lt; 28px)</td>
+                <td><button class="btn btn-outline btn-sm">Edit</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT ── -->
+  <div class="right">
+
+    <!-- Live Detection Log -->
+    <div class="card">
+      <div class="card-header">
+        &#9888; Live Detection Log
+        <span class="badge">Real-time</span>
+      </div>
+      <div class="card-body">
+
+        <div class="detection-row">
+          <div class="det-icon high">&#128073;</div>
+          <div class="det-info">
+            <div class="det-name">Hair Pulling</div>
+            <div class="det-time">0:12:34 into session</div>
+            <div class="conf-bar-wrap"><div class="conf-bar high" style="width:89%;"></div></div>
+          </div>
+          <div class="det-conf conf-high">89%</div>
+        </div>
+
+        <div class="detection-row">
+          <div class="det-icon med">&#128073;</div>
+          <div class="det-info">
+            <div class="det-name">Nail Biting</div>
+            <div class="det-time">0:11:51 into session</div>
+            <div class="conf-bar-wrap"><div class="conf-bar med" style="width:72%;"></div></div>
+          </div>
+          <div class="det-conf conf-med">72%</div>
+        </div>
+
+        <div class="detection-row">
+          <div class="det-icon low">&#128073;</div>
+          <div class="det-info">
+            <div class="det-name">Skin Picking</div>
+            <div class="det-time">0:09:15 into session</div>
+            <div class="conf-bar-wrap"><div class="conf-bar low" style="width:61%;"></div></div>
+          </div>
+          <div class="det-conf conf-low">61%</div>
+        </div>
+
+        <div class="detection-row">
+          <div class="det-icon high">&#128073;</div>
+          <div class="det-info">
+            <div class="det-name">Hair Pulling</div>
+            <div class="det-time">0:07:02 into session</div>
+            <div class="conf-bar-wrap"><div class="conf-bar high" style="width:93%;"></div></div>
+          </div>
+          <div class="det-conf conf-high">93%</div>
+        </div>
+
+        <div class="detection-row">
+          <div class="det-icon med">&#128073;</div>
+          <div class="det-info">
+            <div class="det-name">Nose Picking</div>
+            <div class="det-time">0:04:40 into session</div>
+            <div class="conf-bar-wrap"><div class="conf-bar med" style="width:68%;"></div></div>
+          </div>
+          <div class="det-conf conf-med">68%</div>
+        </div>
+
+        <div style="margin-top: 12px;">
+          <button class="btn btn-outline btn-sm" style="width:100%;">&#128190; Export Log to CSV</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Session Info -->
+    <div class="card">
+      <div class="card-header">&#128203; Current Session</div>
+      <div class="card-body" style="font-size: 13px;">
+        <table style="width:100%;">
+          <tr><td style="color:#999; padding: 5px 0;">Session ID</td><td><strong>#0042</strong></td></tr>
+          <tr><td style="color:#999; padding: 5px 0;">Input Type</td><td><strong>Webcam</strong></td></tr>
+          <tr><td style="color:#999; padding: 5px 0;">Started</td><td><strong>2026-04-11 14:32:10</strong></td></tr>
+          <tr><td style="color:#999; padding: 5px 0;">Duration</td><td><strong>00:12:34</strong></td></tr>
+          <tr><td style="color:#999; padding: 5px 0;">Detections</td><td><strong>5 events</strong></td></tr>
+          <tr><td style="color:#999; padding: 5px 0;">Model</td><td><strong>MediaPipe Holistic</strong></td></tr>
+        </table>
+        <button class="btn btn-secondary btn-sm" style="margin-top:10px; width:100%;">View All Sessions</button>
+      </div>
+    </div>
+
+    <!-- Alert Settings -->
+    <div class="card">
+      <div class="card-header">&#128276; Alert Settings</div>
+      <div class="card-body" style="font-size:13px; color:#555; line-height: 1.7;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span>Email alert on detection</span>
+          <span style="background:#dcfce7; color:#15803d; border-radius:10px; padding:1px 9px; font-size:11px;">ON</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span>Minimum confidence threshold</span>
+          <strong>60%</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span>Auto-save sessions</span>
+          <span style="background:#dcfce7; color:#15803d; border-radius:10px; padding:1px 9px; font-size:11px;">ON</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  BFRB Detection System &mdash; ENEB453 Final Project &mdash; Nishanth S. &mdash; University of Maryland
+  &nbsp;|&nbsp; Stack: Python Flask + MediaPipe + MySQL
+</footer>
+
+</body>
+</html>

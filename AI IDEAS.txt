@@ -1,0 +1,1244 @@
+claude opus 4.6 ideas:
+import { useState } from "react";
+
+const strategies = [
+  {
+    id: "finger-curl",
+    title: "1. Finger Curl Angles",
+    problem: "Your current pinch detection only checks thumb-to-index distance. But when someone rests their chin on their hand, the fingers can be loosely curled and still register a small thumb-to-index distance. Similarly, eating a sandwich brings all fingertips close together around the food.",
+    insight: "A real BFRB pinch involves active finger flexion — the PIP and DIP joints are bent sharply. A resting hand or a hand holding food has relaxed, gently curved fingers. You can measure this by computing the angle at each finger's PIP joint (the middle knuckle).",
+    formula: `// For each finger, compute the angle at the PIP joint
+// Using hand landmarks: MCP → PIP → DIP
+// Index finger: 5 → 6 → 7
+// Middle finger: 9 → 10 → 11
+// Ring finger: 13 → 14 → 15
+// Pinky finger: 17 → 18 → 19
+
+function jointAngle(a, b, c) {
+  // vectors BA and BC
+  const ba = { x: a.x - b.x, y: a.y - b.y };
+  const bc = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ba.x * bc.x + ba.y * bc.y;
+  const magBA = Math.sqrt(ba.x ** 2 + ba.y ** 2);
+  const magBC = Math.sqrt(bc.x ** 2 + bc.y ** 2);
+  const cosAngle = dot / (magBA * magBC + 1e-8);
+  return Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+  // Returns radians: ~π (180°) = straight, < π/2 (90°) = curled
+}
+
+// Compute curl for index finger PIP joint:
+const indexCurl = jointAngle(hand[5], hand[6], hand[7]);
+
+// BFRB pinch threshold:
+// indexCurl < 2.0 radians (~115°) = actively curled
+// indexCurl > 2.5 radians (~143°) = relaxed/extended
+
+// Average curl across all four fingers:
+const avgCurl = (
+  jointAngle(hand[5],  hand[6],  hand[7])  +
+  jointAngle(hand[9],  hand[10], hand[11]) +
+  jointAngle(hand[13], hand[14], hand[15]) +
+  jointAngle(hand[17], hand[18], hand[19])
+) / 4;
+
+// Guard condition — add to your pinch-pull engine:
+const fingersActivelyCurled = avgCurl < 2.2; // ~126°`,
+    howItHelps: [
+      "Eating: fingers wrap loosely around food → PIP angles stay > 2.4 rad → NOT a BFRB pinch",
+      "Chin resting: fingers are mostly straight or gently bent → PIP angles > 2.5 rad → filtered out",
+      "Hair pulling: thumb + index curl tightly → PIP angle < 1.8 rad → confirmed BFRB grip",
+      "Skin picking: all fingertips bunch with active curl → avg PIP angle < 2.0 rad → confirmed"
+    ],
+    landmarks: "hand[5-7], hand[9-11], hand[13-15], hand[17-19]"
+  },
+  {
+    id: "hand-openness",
+    title: "2. Hand Openness Score",
+    problem: "Your cluster score measures how close all fingertips are to their centroid, but it doesn't distinguish between 'fingers bunched because they're actively picking' vs 'fingers bunched because the hand is wrapped around a cup or phone near the face.'",
+    insight: "Compute the ratio of the convex hull area of the five fingertips to the palm area. A BFRB pinch/pick has very low fingertip-hull area but the palm stays roughly normal-sized. When holding an object, the entire hand contracts — palm area shrinks proportionally.",
+    formula: `// Palm area: triangle formed by wrist(0), index_MCP(5), pinky_MCP(17)
+function triangleArea(a, b, c) {
+  return 0.5 * Math.abs(
+    (b.x - a.x) * (c.y - a.y) -
+    (c.x - a.x) * (b.y - a.y)
+  );
+}
+
+const palmArea = triangleArea(hand[0], hand[5], hand[17]);
+
+// Fingertip spread area: use the "shoelace" formula on tips
+// Sorted by angle from centroid to form a convex polygon
+const tips = [hand[4], hand[8], hand[12], hand[16], hand[20]];
+const cx = tips.reduce((s, t) => s + t.x, 0) / 5;
+const cy = tips.reduce((s, t) => s + t.y, 0) / 5;
+
+// Sort tips by angle from centroid
+const sorted = [...tips].sort((a, b) =>
+  Math.atan2(a.y - cy, a.x - cx) -
+  Math.atan2(b.y - cy, b.x - cx)
+);
+
+let tipArea = 0;
+for (let i = 0; i < sorted.length; i++) {
+  const j = (i + 1) % sorted.length;
+  tipArea += sorted[i].x * sorted[j].y;
+  tipArea -= sorted[j].x * sorted[i].y;
+}
+tipArea = Math.abs(tipArea) / 2;
+
+// Hand openness = fingertip area / palm area
+const handOpenness = tipArea / (palmArea + 1e-8);
+
+// BFRB picking/pinching: handOpenness < 0.3 (tips bunched, palm normal)
+// Holding object: handOpenness < 0.3 BUT palmArea also shrinks (< 0.6× baseline)
+// Resting on face: handOpenness > 0.6 (fingers spread out)
+
+// Guard: require palmArea to be at LEAST 70% of baseline
+const palmNormal = palmArea > (baselinePalmArea * 0.7);
+const isBFRBGrip = handOpenness < 0.3 && palmNormal;`,
+    howItHelps: [
+      "Holding a cup/utensil near face: entire hand contracts → palmArea drops to < 60% of baseline → filtered out",
+      "Pinching hair: only thumb+index close, palm stays normal → passes the palm-normal check",
+      "Open hand resting on cheek: handOpenness > 0.6 → clearly not a pinch",
+      "Skin picking cluster: tips bunch to < 0.3 openness, palm stays full-size → detected correctly"
+    ],
+    landmarks: "hand[0], hand[4,8,12,16,20], hand[5], hand[17]"
+  },
+  {
+    id: "palm-normal",
+    title: "3. Palm Orientation (Wrist Approach Angle)",
+    problem: "When people eat, their hand approaches from below with the palm facing upward (carrying food to mouth). When people rest their chin, the palm faces sideways with fingers horizontal. BFRBs approach with fingertips leading, palm facing the scalp/face.",
+    insight: "Compute the direction vector from wrist to middle fingertip (hand[0] → hand[12]). Then compute the direction vector from wrist to nose (hand[0] → face[1]). The angle between these two vectors tells you whether the fingertips are pointed AT the face (BFRB) or the wrist/palm is closer (resting/eating).",
+    formula: `// Direction vector: wrist → middle finger tip
+const fingerDir = {
+  x: hand[12].x - hand[0].x,
+  y: hand[12].y - hand[0].y
+};
+
+// Direction vector: wrist → nose
+const faceDir = {
+  x: face[1].x - hand[0].x,
+  y: face[1].y - hand[0].y
+};
+
+// Angle between these two vectors
+const dot = fingerDir.x * faceDir.x + fingerDir.y * faceDir.y;
+const magF = Math.sqrt(fingerDir.x ** 2 + fingerDir.y ** 2);
+const magN = Math.sqrt(faceDir.x ** 2 + faceDir.y ** 2);
+const approachAngle = Math.acos(
+  Math.max(-1, Math.min(1, dot / (magF * magN + 1e-8)))
+);
+
+// approachAngle interpretation:
+// < 0.5 rad (~30°): fingertips pointing directly at face → BFRB likely
+// 0.5 - 1.2 rad: ambiguous zone
+// > 1.2 rad (~70°): wrist closer than fingers → resting or eating
+
+// For eating specifically, also check if wrist is BELOW mouth:
+const wristBelowMouth = hand[0].y > face[13].y;
+// (remember: y increases downward in MediaPipe)
+
+// Combined eating filter:
+const likelyEating = approachAngle > 0.9 && wristBelowMouth;
+
+// For resting/propping chin:
+const wristNearestToFace =
+  dist(hand[0], face[1]) < dist(hand[12], face[1]);
+const likelyResting = wristNearestToFace && approachAngle > 1.0;`,
+    howItHelps: [
+      "Eating: hand comes from below, wrist closer to face than fingertips → approachAngle > 1.0 → filtered",
+      "Chin resting: palm/wrist on chin, fingers point away → wristNearestToFace = true → filtered",
+      "Hair pulling: fingertips aim at scalp, wrist trails behind → approachAngle < 0.4 → confirmed",
+      "Nail biting: single fingertip aimed at mouth → approachAngle < 0.3 → confirmed"
+    ],
+    landmarks: "hand[0], hand[12], face[1], face[13]"
+  },
+  {
+    id: "mouth-aperture",
+    title: "4. Mouth Aperture (Open vs Closed)",
+    problem: "Nail biting and eating both bring the hand to the mouth. Your dwell-based detection can't tell them apart because both register as 'fingertip near upper lip for > 1 second.'",
+    insight: "When eating, the mouth opens wide to accept food — the gap between upper lip (face[13]) and lower lip (face[14]) increases significantly. During nail biting, the mouth barely opens; the teeth grip the nail with minimal jaw movement. You can measure mouth openness and use it as a discriminator.",
+    formula: `// Mouth aperture: vertical distance between upper and lower lip
+const mouthOpen = dist(face[13], face[14]) / faceWidth;
+
+// Also useful: mouth width for aspect ratio
+// face[61] = left mouth corner, face[291] = right mouth corner
+// (or approximate with face[78] and face[308])
+const mouthWidth = dist(face[78], face[308]) / faceWidth;
+const mouthAspect = mouthOpen / (mouthWidth + 1e-8);
+
+// Thresholds:
+// mouthOpen < 0.06 fw → mouth closed/barely open → nail biting
+// mouthOpen > 0.12 fw → mouth open → likely eating or talking
+
+// ALSO: check how many fingertips are near the mouth
+const tipsNearMouth = [hand[4], hand[8], hand[12], hand[16], hand[20]]
+  .filter(tip => dist(tip, face[13]) / faceWidth < 0.35)
+  .length;
+
+// Nail biting: 1-2 tips near mouth + mouth barely open
+// Eating: 0 tips near mouth (holding food) OR 
+//         all tips clustered (holding utensil) + mouth open wide
+
+const isNailBite = tipsNearMouth <= 2 && mouthOpen < 0.08;
+const isLikelyEating = mouthOpen > 0.12 && tipsNearMouth === 0;`,
+    howItHelps: [
+      "Eating with utensil: mouth opens wide + no bare fingertip near lips → filtered",
+      "Eating finger food: mouth opens wide (> 0.12fw) even if fingers near → eating flag suppresses BFRB",
+      "Nail biting: mouth barely moves (< 0.06fw) + 1 fingertip pressed to lips → confirmed",
+      "Drinking from cup: 0 fingertips near mouth (hand wrapped on cup) → filtered"
+    ],
+    landmarks: "face[13], face[14], face[78], face[308], hand[4,8,12,16,20]"
+  },
+  {
+    id: "micro-oscillation",
+    title: "5. Micro-Oscillation Detection (Repetitive Motion)",
+    problem: "A person resting their hand on their face produces the same dwell signal as someone skin-picking. Both show low velocity and sustained proximity. Your current system can't tell them apart after the 1-second dwell threshold.",
+    insight: "BFRBs involve small, repetitive, back-and-forth movements — the hand stays in one zone but oscillates. Resting is truly static (near-zero movement). You can detect this by tracking the variance of fingertip positions over a sliding window and looking for periodic micro-movements.",
+    formula: `// Keep a circular buffer of index fingertip positions
+const WINDOW = 30; // ~1 second at 30fps
+const posHistory = []; // stores { x, y, t }
+
+// Each frame, push and trim:
+posHistory.push({ x: hand[8].x, y: hand[8].y, t: Date.now() });
+if (posHistory.length > WINDOW) posHistory.shift();
+
+// Compute positional variance over the window
+const meanX = posHistory.reduce((s, p) => s + p.x, 0) / posHistory.length;
+const meanY = posHistory.reduce((s, p) => s + p.y, 0) / posHistory.length;
+const variance = posHistory.reduce((s, p) =>
+  s + (p.x - meanX) ** 2 + (p.y - meanY) ** 2, 0
+) / posHistory.length;
+
+// Also compute direction reversals (sign changes in velocity)
+let reversals = 0;
+for (let i = 2; i < posHistory.length; i++) {
+  const dx1 = posHistory[i-1].x - posHistory[i-2].x;
+  const dx2 = posHistory[i].x - posHistory[i-1].x;
+  const dy1 = posHistory[i-1].y - posHistory[i-2].y;
+  const dy2 = posHistory[i].y - posHistory[i-1].y;
+  if (dx1 * dx2 < 0 || dy1 * dy2 < 0) reversals++;
+}
+
+// Normalize reversals by window size:
+const reversalRate = reversals / (posHistory.length - 2);
+
+// Classification:
+// RESTING: variance < 0.00001 AND reversalRate < 0.15
+// BFRB PICKING: variance 0.00003-0.0005 AND reversalRate > 0.30
+// EATING: variance > 0.001 (larger movements, non-repetitive)
+
+const isStaticRest = variance < 0.00002 && reversalRate < 0.15;
+const isMicroOscillating = variance > 0.00003 
+  && variance < 0.0005 
+  && reversalRate > 0.30;`,
+    howItHelps: [
+      "Chin resting: hand is genuinely still → variance near zero → filtered as 'static rest'",
+      "Skin picking: small repetitive scratching motions → moderate variance + high reversal rate → confirmed",
+      "Eating: hand moves in large arcs (mouth to plate) → variance too high → clearly not BFRB",
+      "Nail biting: finger stays at mouth but makes tiny chewing oscillations → detected as micro-oscillation"
+    ],
+    landmarks: "hand[8] (or any active fingertip)"
+  },
+  {
+    id: "extended-fingers",
+    title: "6. Extended Finger Count",
+    problem: "Your pinch strength measures thumb-to-index distance, but some false positives come from gestures where the hand is loosely closed (like a phone held to the ear, or adjusting glasses). These aren't true pinches.",
+    insight: "Count how many fingers are fully extended vs curled. A true BFRB pinch has exactly 0-1 extended fingers (thumb+index form the pinch, others curl). Holding a phone has 2-3 extended fingers. An open palm on cheek has 4-5 extended.",
+    formula: `// A finger is "extended" if its TIP is farther from wrist than its PIP
+// This works because extended fingers reach outward while curled ones fold back
+
+function isFingerExtended(tip, pip, wrist) {
+  return dist(tip, wrist) > dist(pip, wrist);
+}
+
+// For thumb: compare tip(4) to IP(3) relative to wrist(0)
+// But thumb extends sideways, so use the index MCP as reference instead
+function isThumbExtended(hand) {
+  return dist(hand[4], hand[5]) > dist(hand[3], hand[5]) * 1.2;
+}
+
+const extended = [
+  isThumbExtended(hand),
+  isFingerExtended(hand[8],  hand[6],  hand[0]), // index
+  isFingerExtended(hand[12], hand[10], hand[0]), // middle
+  isFingerExtended(hand[16], hand[14], hand[0]), // ring
+  isFingerExtended(hand[20], hand[18], hand[0]), // pinky
+];
+const extendedCount = extended.filter(Boolean).length;
+
+// BFRB pinch: extendedCount ≤ 1 (most fingers curled into pinch)
+// Holding object: extendedCount = 2-3 (some fingers wrap, some extend)
+// Open palm rest: extendedCount = 4-5
+
+// Add as guard to pinch-pull engine:
+const isPinchGrip = smoothPinch > 0.55 && extendedCount <= 2;
+// And to dwell engine (filter open-palm resting):
+const isOpenPalmRest = extendedCount >= 4;`,
+    howItHelps: [
+      "Phone to ear: 2-3 fingers extended around phone → extendedCount = 3 → not a BFRB pinch",
+      "Adjusting glasses: multiple fingers extended → extendedCount ≥ 3 → filtered",
+      "Hair pulling pinch: only thumb and maybe index slightly extended → count ≤ 1 → confirmed",
+      "Open palm on cheek: all 5 extended → clearly resting, not picking"
+    ],
+    landmarks: "hand[0,3,4,5,6,8,10,12,14,16,18,20]"
+  },
+  {
+    id: "approach-trajectory",
+    title: "7. Approach Trajectory (Entry Direction)",
+    problem: "Your system only checks the current distance of the hand from the face. It doesn't track HOW the hand got there. Eating involves a distinctive bottom-up arc (plate → mouth → plate). BFRB approaches tend to come from the side or the lap in a direct, slow path.",
+    insight: "Track the wrist position over the last 15 frames (0.5s) before entering the proximity zone. Compute the average approach vector. BFRBs approach slowly and directly. Eating approaches in a repeated arc pattern.",
+    formula: `// When transitioning from IDLE → PROXIMITY, capture the approach vector:
+// Store wrist positions for the 15 frames before proximity triggered
+
+let approachBuffer = []; // ring buffer of wrist positions
+
+// Every frame (before proximity check):
+approachBuffer.push({ x: hand[0].x, y: hand[0].y });
+if (approachBuffer.length > 15) approachBuffer.shift();
+
+// When proximity triggers, compute approach direction:
+function onProximityEnter() {
+  if (approachBuffer.length < 5) return;
+  const first = approachBuffer[0];
+  const last = approachBuffer[approachBuffer.length - 1];
+  
+  const approachVec = {
+    x: last.x - first.x,
+    y: last.y - first.y
+  };
+  
+  // Angle of approach (0 = right, π/2 = down, -π/2 = up)
+  const approachDir = Math.atan2(approachVec.y, approachVec.x);
+  
+  // Speed of approach
+  const approachSpeed = Math.sqrt(approachVec.x**2 + approachVec.y**2) 
+    / approachBuffer.length;
+  
+  // Eating pattern: approaches from BELOW (approachDir < -0.5, meaning upward)
+  // at moderate-high speed
+  const fromBelow = approachDir < -0.3; // moving upward
+  const moderateSpeed = approachSpeed > 0.005;
+  const likelyEatingApproach = fromBelow && moderateSpeed;
+  
+  // BFRB pattern: slow, from side or level, direct path
+  const slowApproach = approachSpeed < 0.004;
+  const fromSideOrLevel = Math.abs(approachDir) < 1.2;
+  const likelyBFRBApproach = slowApproach && fromSideOrLevel;
+}`,
+    howItHelps: [
+      "Eating: hand comes from below (plate level) with moderate speed → upward trajectory detected → filtered",
+      "Hair pulling: hand drifts slowly from lap/side toward scalp → slow + lateral → confirmed BFRB pattern",
+      "Quick face touch while talking: high approach speed → filtered by velocity (your existing check)",
+      "Repeated eating arcs: approach buffer shows consistent up-down pattern → classified as eating cycle"
+    ],
+    landmarks: "hand[0] (wrist position over time)"
+  },
+  {
+    id: "dual-signal",
+    title: "8. Dual-Signal Confirmation Matrix",
+    problem: "No single feature is foolproof. You need multiple signals agreeing before flagging a BFRB. Your current system fires on pinch-pull OR dwell alone, but combining signals multiplicatively would dramatically reduce false positives.",
+    insight: "Build a confidence score from weighted feature agreement. Require at least 3 out of the 7 discriminators to agree before firing. This is similar to how AdaBoost combines weak classifiers into a strong one, but done as a simple weighted vote.",
+    formula: `function computeBFRBConfidence(signals) {
+  const weights = {
+    proximity:       0.15, // hand near face (your existing smoothDist)
+    dwellTime:       0.15, // stayed > 1s (your existing dwell)
+    fingerCurl:      0.15, // fingers actively curled
+    pinchStrength:   0.15, // thumb+index pinching
+    microOscillation:0.15, // repetitive micro-movements
+    notEating:       0.10, // mouth not wide open + not from below
+    notResting:      0.10, // not open palm + not static
+    extendedFingers: 0.05, // correct finger count for gesture
+  };
+
+  let score = 0;
+  if (signals.proximity)       score += weights.proximity;
+  if (signals.dwellTime)       score += weights.dwellTime;
+  if (signals.fingerCurl)      score += weights.fingerCurl;
+  if (signals.pinchStrength)   score += weights.pinchStrength;
+  if (signals.microOscillation)score += weights.microOscillation;
+  if (signals.notEating)       score += weights.notEating;
+  if (signals.notResting)      score += weights.notResting;
+  if (signals.extendedFingers) score += weights.extendedFingers;
+
+  return score;
+}
+
+// BFRB fires when: score ≥ 0.60
+// This means at least 4 major signals must agree
+// Even if proximity + dwell are true, without finger curl
+// and micro-oscillation, it won't fire (resting scenario)
+
+// For pinch-pull pathway specifically:
+// Require: pinchStrength + fingerCurl + proximity + (notEating OR notResting)
+// This prevents "holding a pen near face" from triggering`,
+    howItHelps: [
+      "Resting hand: passes proximity + dwell, FAILS fingerCurl + microOscillation + extendedFingers → score ~0.30 → no fire",
+      "Eating: passes proximity, FAILS notEating + fingerCurl + pinchStrength → score ~0.15 → no fire",
+      "Real hair pull: passes ALL signals → score > 0.85 → high confidence fire",
+      "Adjusting glasses: passes proximity, FAILS extendedFingers + fingerCurl + microOscillation → no fire"
+    ],
+    landmarks: "All of the above combined"
+  }
+];
+
+export default function BFRBGuide() {
+  const [activeStrategy, setActiveStrategy] = useState(0);
+  const [showFormula, setShowFormula] = useState(false);
+
+  const s = strategies[activeStrategy];
+
+  return (
+    <div style={{
+      fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
+      background: "var(--bg, #0a0a0f)",
+      color: "var(--text, #e0e0e8)",
+      minHeight: "100vh",
+      padding: "0"
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        :root {
+          --bg: #0a0a0f;
+          --surface: #13131a;
+          --surface2: #1a1a24;
+          --border: #2a2a38;
+          --text: #e0e0e8;
+          --text2: #8888a0;
+          --accent: #6366f1;
+          --accent2: #818cf8;
+          --green: #34d399;
+          --red: #f87171;
+          --amber: #fbbf24;
+          --cyan: #22d3ee;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--surface); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{
+        padding: "24px 28px 16px",
+        borderBottom: "1px solid var(--border)",
+        background: "linear-gradient(180deg, #13131a 0%, #0a0a0f 100%)"
+      }}>
+        <div style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: "11px",
+          fontWeight: 600,
+          letterSpacing: "2.5px",
+          textTransform: "uppercase",
+          color: "var(--accent2)",
+          marginBottom: "8px"
+        }}>BFRB Detection Engine</div>
+        <h1 style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: "22px",
+          fontWeight: 700,
+          color: "var(--text)",
+          lineHeight: 1.3,
+          marginBottom: "6px"
+        }}>False Positive Reduction Guide</h1>
+        <p style={{
+          fontSize: "12px",
+          color: "var(--text2)",
+          lineHeight: 1.5,
+          maxWidth: "650px"
+        }}>
+          8 discriminator strategies using MediaPipe hand + face landmarks.
+          Each adds a new guard condition to your existing state machine without replacing anything you've built.
+        </p>
+      </div>
+
+      {/* Strategy tabs */}
+      <div style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "4px",
+        padding: "12px 28px",
+        borderBottom: "1px solid var(--border)",
+        background: "var(--surface)"
+      }}>
+        {strategies.map((st, i) => (
+          <button
+            key={st.id}
+            onClick={() => { setActiveStrategy(i); setShowFormula(false); }}
+            style={{
+              padding: "6px 12px",
+              fontSize: "11px",
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontWeight: activeStrategy === i ? 600 : 400,
+              background: activeStrategy === i ? "var(--accent)" : "transparent",
+              color: activeStrategy === i ? "#fff" : "var(--text2)",
+              border: `1px solid ${activeStrategy === i ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: "4px",
+              cursor: "pointer",
+              transition: "all 0.15s ease"
+            }}
+          >
+            {st.title.split(". ")[1]}
+          </button>
+        ))}
+      </div>
+
+      {/* Main content */}
+      <div style={{ padding: "24px 28px", maxWidth: "780px" }}>
+        {/* Title */}
+        <h2 style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: "18px",
+          fontWeight: 700,
+          color: "var(--text)",
+          marginBottom: "16px",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px"
+        }}>
+          <span style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "28px",
+            height: "28px",
+            borderRadius: "6px",
+            background: "var(--accent)",
+            color: "#fff",
+            fontSize: "13px",
+            fontWeight: 700,
+            fontFamily: "'IBM Plex Mono', monospace"
+          }}>{activeStrategy + 1}</span>
+          {s.title.split(". ")[1]}
+        </h2>
+
+        {/* Problem */}
+        <div style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderLeft: "3px solid var(--red)",
+          borderRadius: "6px",
+          padding: "14px 16px",
+          marginBottom: "14px"
+        }}>
+          <div style={{
+            fontSize: "10px",
+            fontWeight: 600,
+            letterSpacing: "1.5px",
+            textTransform: "uppercase",
+            color: "var(--red)",
+            marginBottom: "6px"
+          }}>THE PROBLEM</div>
+          <p style={{ fontSize: "12.5px", lineHeight: 1.7, color: "var(--text)" }}>{s.problem}</p>
+        </div>
+
+        {/* Insight */}
+        <div style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderLeft: "3px solid var(--cyan)",
+          borderRadius: "6px",
+          padding: "14px 16px",
+          marginBottom: "14px"
+        }}>
+          <div style={{
+            fontSize: "10px",
+            fontWeight: 600,
+            letterSpacing: "1.5px",
+            textTransform: "uppercase",
+            color: "var(--cyan)",
+            marginBottom: "6px"
+          }}>THE INSIGHT</div>
+          <p style={{ fontSize: "12.5px", lineHeight: 1.7, color: "var(--text)" }}>{s.insight}</p>
+        </div>
+
+        {/* Landmarks used */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          marginBottom: "14px",
+          fontSize: "11px",
+          color: "var(--text2)"
+        }}>
+          <span style={{
+            padding: "3px 8px",
+            background: "var(--surface2)",
+            border: "1px solid var(--border)",
+            borderRadius: "4px",
+            fontWeight: 500,
+            color: "var(--amber)",
+            fontSize: "10px"
+          }}>LANDMARKS</span>
+          <code style={{ color: "var(--text)" }}>{s.landmarks}</code>
+        </div>
+
+        {/* Formula toggle */}
+        <button
+          onClick={() => setShowFormula(!showFormula)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "10px 16px",
+            background: showFormula ? "var(--surface2)" : "var(--surface)",
+            border: `1px solid ${showFormula ? "var(--accent)" : "var(--border)"}`,
+            borderRadius: "6px",
+            color: showFormula ? "var(--accent2)" : "var(--text)",
+            cursor: "pointer",
+            fontSize: "12px",
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontWeight: 500,
+            width: "100%",
+            transition: "all 0.15s ease",
+            marginBottom: showFormula ? "0" : "14px"
+          }}
+        >
+          <span style={{ transform: showFormula ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s" }}>▶</span>
+          {showFormula ? "Hide" : "Show"} Implementation Code
+        </button>
+
+        {/* Formula / code */}
+        {showFormula && (
+          <div style={{
+            background: "#0d0d14",
+            border: "1px solid var(--border)",
+            borderTop: "none",
+            borderRadius: "0 0 6px 6px",
+            padding: "16px",
+            marginBottom: "14px",
+            overflowX: "auto"
+          }}>
+            <pre style={{
+              fontSize: "11.5px",
+              lineHeight: 1.65,
+              color: "#c5c5d8",
+              fontFamily: "'IBM Plex Mono', monospace",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word"
+            }}>{s.formula}</pre>
+          </div>
+        )}
+
+        {/* How it filters each scenario */}
+        <div style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderLeft: "3px solid var(--green)",
+          borderRadius: "6px",
+          padding: "14px 16px"
+        }}>
+          <div style={{
+            fontSize: "10px",
+            fontWeight: 600,
+            letterSpacing: "1.5px",
+            textTransform: "uppercase",
+            color: "var(--green)",
+            marginBottom: "10px"
+          }}>HOW IT FILTERS EACH SCENARIO</div>
+          {s.howItHelps.map((h, i) => {
+            const isFiltered = h.includes("filtered") || h.includes("no fire") || h.includes("clearly not");
+            const isConfirmed = h.includes("confirmed") || h.includes("detected") || h.includes("high confidence");
+            return (
+              <div key={i} style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "8px",
+                marginBottom: i < s.howItHelps.length - 1 ? "8px" : 0,
+                fontSize: "12px",
+                lineHeight: 1.6,
+                color: "var(--text)"
+              }}>
+                <span style={{
+                  flexShrink: 0,
+                  marginTop: "2px",
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: isFiltered ? "var(--green)" : isConfirmed ? "var(--red)" : "var(--amber)"
+                }} />
+                <span>{h}</span>
+              </div>
+            );
+          })}
+          <div style={{
+            marginTop: "10px",
+            display: "flex",
+            gap: "14px",
+            fontSize: "10px",
+            color: "var(--text2)"
+          }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)" }} /> False positive blocked
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red)" }} /> True BFRB confirmed
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Integration note */}
+      <div style={{
+        margin: "8px 28px 24px",
+        padding: "14px 16px",
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "6px",
+        fontSize: "12px",
+        lineHeight: 1.7,
+        color: "var(--text2)"
+      }}>
+        <span style={{ fontWeight: 600, color: "var(--accent2)" }}>Integration order: </span>
+        Start with <code style={{ color: "var(--amber)" }}>#4 Mouth Aperture</code> and <code style={{ color: "var(--amber)" }}>#6 Extended Fingers</code> — they're the cheapest to compute and catch the most common false positives (eating and open-palm resting). Then add <code style={{ color: "var(--amber)" }}>#1 Finger Curl</code> to tighten your pinch detection. Layer in <code style={{ color: "var(--amber)" }}>#5 Micro-Oscillation</code> to separate resting from picking. Finally, wire everything into <code style={{ color: "var(--amber)" }}>#8 Dual-Signal Confirmation</code> as your master gate.
+      </div>
+    </div>
+  );
+}
+
+
+
+gemini IDeas:
+Gemini
+Detecting BFRB Movements Accurately
+Conversation with Gemini
+How can I detect each of these BFRB movements without getting false positives? I thought that when people pinch things, all of their fingertips are close together, so I added that condition, but it still isn’t foolproof. Do deep research and find the best methods, formulas, or strategies to detect all of these BFRB movements without false positives—like when people are eating or just keeping their hand on their face. Use the points.
+
+Building a robust BFRB detection system using computer vision is a complex challenge, and you are running into the classic hurdle: the "domain gap" between intentional gestures and everyday micro-movements. It’s entirely normal to struggle with false positives here.
+
+First, let's address the misconception about pinching. You mentioned you thought all fingertips close together equaled a pinch. However, based on the clinical definitions in your documentation, conflating a "pinch" with a "cluster" will cause your system to fail. * Hair Pulling uses a precise 2-finger or 3-finger pinch (Thumb + Index/Middle). The ring and pinky fingers are usually curled or out of the way.
+
+Skin Picking uses the 5-finger "cluster" where all fingertips bunch together to gather skin.
+
+If you require all five fingers to be close together to detect a hair pull, you will get false negatives (missing actual hair pulls). If you use a 2-finger pinch to detect skin picking, you'll get false positives every time someone holds a pen near their face.
+
+To eliminate false positives like eating, drinking, or resting your head on your hand, we need to move beyond simple proximity and dwell time. Here are the advanced, point-based strategies and mathematical formulas you need to implement.
+
+1. The "Eating vs. Nail Biting" Filter (Mouth Aspect Ratio)
+The Problem: Both eating and nail biting trigger the "fingers near mouth" proximity and dwell thresholds.
+The Solution: People open their mouths wide to insert food, but keep their lips and teeth relatively closed to bite a nail. You need to calculate the Mouth Aspect Ratio (MAR) using the face mesh landmarks.
+
+Relevant Points: Face [13] (Upper Lip Top), Face [14] (Lower Lip Bottom), Face [78] (Left Mouth Corner), Face [308] (Right Mouth Corner).
+
+Formula:
+
+MAR= 
+Distance(Face[78],Face[308])
+Distance(Face[13],Face[14])
+​
+ 
+Implementation: If the hand is near the mouth and MAR>0.40 (mouth is wide open), flag it as Eating/Yawning and block the BFRB trigger. If MAR<0.20 (mouth closed or slightly parted) and dwell time is met, trigger Nail Biting/Lip Picking.
+
+2. The "Resting vs. Skin Picking" Filter (Micro-Velocity / Jitter)
+The Problem: Resting your chin on your palm or hand on your cheek perfectly mimics the proximity, cluster, and dwell time of skin picking.
+The Solution: A resting hand is structurally static. Skin picking involves rapid, tiny movements (micro-velocities). We need to calculate the variance (jitter) of the hand's centroid.
+
+Strategy: Over a 1-second rolling window (approx. 30 frames), track the centroid of the clustered fingertips. Calculate the standard deviation of this point's position.
+
+Formula: Let C 
+t
+​
+  be the centroid at frame t, and μ be the average centroid position over N frames.
+
+Jitter= 
+N
+1
+​
+  
+t=1
+∑
+N
+​
+ (C 
+t
+​
+ −μ) 
+2
+ 
+
+​
+ 
+Implementation: * If Jitter<0.005fw (face-widths): The hand is perfectly still. State = Resting. Block BFRB.
+
+If Jitter>0.08fw: The hand is moving too much. State = Talking/Gesturing. Block BFRB.
+
+If 0.005fw≤Jitter≤0.08fw: The hand is making micro-movements in one spot. State = Skin Picking.
+
+3. The "Drinking/Holding Object" Filter (Finger Curl Analysis)
+The Problem: Holding a cup to drink or holding a phone near your face puts the hand in the proximity zone, and the fingers may appear grouped.
+The Solution: When holding an object, the fingers wrap around it. The distance from the fingertips to the base of the palm is roughly equal across all fingers. In BFRBs (like a precision pinch), the thumb and index are extended together, while the ring and pinky are usually curled tight into the palm.
+
+Relevant Points: Hand [0] (Wrist/Palm Base), Hand tips [8, 12, 16, 20].
+
+Strategy: Measure the "curl state" of the ring and pinky fingers versus the index finger.
+
+Implementation: * Calculate D 
+index
+​
+ =Distance(Hand[8],Hand[0])
+
+Calculate D 
+pinky
+​
+ =Distance(Hand[20],Hand[0])
+
+If D 
+index
+​
+ ≈D 
+pinky
+​
+  (within a 10% margin), the hand is likely wrapped around a cup or phone. Block BFRB.
+
+If D 
+index
+​
+ ≫D 
+pinky
+​
+ , the index is extended and the pinky is tucked, which is a classic BFRB posture.
+
+4. Refining the Pinch-Pull Vector (Hair Pulling)
+The Problem: Brushing hair away from the face or scratching the scalp triggers the "pinch and pull away" logic if the hand moves ≥0.28fw.
+The Solution: A true hair pull has a distinct velocity profile and vector. It starts with zero velocity (the dwell/grip), followed by a sharp acceleration vector normal (perpendicular) to the scalp surface.
+
+Strategy: Track the angle of departure. When the pinch is confirmed, log the coordinate. When the hand moves away, calculate the vector.
+
+Implementation: Brushing hair usually moves parallel to the face/forehead. Pulling hair moves perpendicular away from it. By comparing the vector of the hand's escape trajectory against the 3D plane formed by the face mesh points (e.g., Forehead [10], Left Temple [162], Right Temple [389]), you can ensure the hand is pulling out rather than swiping across.
+
+By layering these specific geometric checks on top of your existing dwell timer and proximity zones, your system will be able to distinguish intent, drastically reducing false positives.
+
+Since you are using MediaPipe Holistic, are you currently extracting the z coordinates (depth) to help with these vector calculations, or have you restricted the engine entirely to 2D (x, y) math due to the depth estimation inflation you noted?
+
+
+
+
+
+Gemini is AI and can make mistakes.
+
+
+Perlexity Ideas:
+# High-Precision BFRB Detection from MediaPipe Landmarks
+
+## Executive Overview
+
+This report proposes concrete, point-based rules for detecting body-focused repetitive behaviors (BFRBs) from MediaPipe Holistic hand and face landmarks with a strong bias toward **zero or near-zero false positives**, even if that lowers recall.
+The design builds directly on an existing rule-based engine that already uses face-width normalization, proximity, velocity, dwell time, pinch strength, fingertip clustering, and pinch–pull distance to detect BFRBs such as hair pulling, skin picking, nail biting, nose picking, lip picking, and general face touching.[1]
+
+Key ideas from prior work on BFRB wearables, eating detection, and gesture systems are adapted to a webcam + landmark setting: use **multi-stage gating**, **temporal windows**, and **context-specific negative detectors** (especially for eating and neutral face-resting) rather than relying on a single static condition like “all fingertips are close together.”[2][3][4]
+
+The result is a set of formulas and heuristics organized into:
+
+- Global gating signals that every BFRB must satisfy
+- Negative detectors to explicitly block eating and passive face-resting
+- Per-BFRB rules (hair pulling, skin picking, nail biting, nose picking, lip picking, generic face touching) expressed purely in terms of landmark distances, angles, and temporal behavior
+
+
+## 1. Background and Constraints
+
+### 1.1 Existing engine summary
+
+The current system already uses MediaPipe Holistic to get 21 hand and 468 face landmarks per frame, then computes distances in normalized image space.[1]
+Key components that are already implemented include:
+
+- **Face width** \(faceWidth = dist(face, face)\) to normalize all distances into “face-width units,” making thresholds scale-invariant.
+- **Proximity**: minimum normalized distance between key hand landmarks (wrist, index tip, thumb tip, grab point) and key face landmarks (nose, cheeks, lips, forehead).[1]
+- **EMA smoothing** of distances, velocities, pinch strength, and cluster strength to suppress frame-to-frame jitter.
+- **Velocity filter** based on wrist motion (slow movements only are eligible for BFRBs).
+- **Dwell timer**: hand must remain near the face for at least \(500–1000\) ms, with low velocity, before a BFRB is declared.
+- **Pinch strength** from thumb–index and thumb–middle distances, normalized by face width.
+- **Fingertip cluster strength** from the average spread of all five fingertips around their centroid.
+- **Pinch–zone proximity**: grab-point near specific face zones (forehead, cheeks, chin, nose).
+- **Pull-back distance**: difference between current hand–face distance and the distance at pinch start to confirm hair-pulling.
+
+These ingredients are strong, but a single condition like “all fingertips are close together” still fires during **eating** (grasping utensils, holding food) and **neutral face-resting** (leaning the head on a hand), because those behaviors can also produce clustered fingertips or a pinch-like pose near the face.
+
+
+### 1.2 Lessons from related work
+
+Research on BFRB detection with **wearables** shows that high accuracy comes from combining multiple sensing channels (motion, orientation, heart rate, thermal) and using temporal windows of several seconds, not just single-frame signals.[5][3][4]
+Similarly, eating-detection systems find that delaying confirmation until several gestures are observed greatly reduces false positives from unrelated hand-to-mouth movements.[2]
+Gesture-recognition work also emphasizes training on “noise classes” (irrelevant but frequent gestures) and applying personalization/calibration to reduce false activations in real-world use.[6]
+
+For face-centric gestures, hand-over-face detectors treat **occlusion of the face** as a primitive that other detectors can use to veto or confirm events, illustrating the value of explicit “gating” components.[7]
+
+Translating these ideas to a landmark-only webcam system suggests three design principles:
+
+1. Use **multi-stage gating**: a gesture should pass several independent tests (location, shape, temporal pattern, and context) before being labeled as BFRB.
+2. Use **temporal windows** and micro-motion patterns: BFRBs are characterized by repetitive micro-movements at a fixed location, whereas eating or neutral resting have different temporal signatures.
+3. Add **negative detectors** for common confounds like eating and passive face-resting so that a BFRB is only allowed when no negative detector is active.
+
+
+## 2. Global Landmark-Based Signals
+
+This section defines reusable geometric and temporal signals derived from hand and face landmarks.
+All distances are normalized by \(faceWidth\) as in the existing system.[1]
+
+### 2.1 Basic distances
+
+Use the existing Euclidean distance in 2D:
+
+\[
+\text{dist}(A, B) = \sqrt{(A_x - B_x)^2 + (A_y - B_y)^2} \quad (1)
+\]
+
+Normalize any distance \(d\) by
+
+\[
+\tilde d = \frac{d}{faceWidth} \quad (2)
+\]
+
+Key points:
+
+- Hand: wrist (0), thumb tip (4), index tip (8), middle tip (12), ring tip (16), pinky tip (20)
+- Face: nose tip (1), forehead center (10), upper lip (13), lower lip (14), chin (152), left cheek (234), right cheek (454)[8][1]
+
+
+### 2.2 Proximity and zones
+
+Reuse and slightly refine the existing minimum proximity distance:
+
+- \(d_{w,n} = \tilde{\text{dist}}(wrist, nose)\)
+- \(d_{i,u} = \tilde{\text{dist}}(indexTip, upperLip)\)
+- \(d_{t,u} = \tilde{\text{dist}}(thumbTip, upperLip)\)
+- \(d_{i,n} = \tilde{\text{dist}}(indexTip, nose)\)
+- \(d_{i,c_L} = \tilde{\text{dist}}(indexTip, leftCheek)\)
+- \(d_{i,c_R} = \tilde{\text{dist}}(indexTip, rightCheek)\)
+- \(d_{g,f} = \tilde{\text{dist}}(grabPoint, forehead)\)
+
+Then define
+
+\[
+\tilde d_{min} = \min(d_{w,n}, d_{i,u}, d_{t,u}, d_{i,n}, d_{i,c_L}, d_{i,c_R}, d_{g,f}) \quad (3)
+\]
+
+Smooth \(\tilde d_{min}\) with EMA as already implemented.[1]
+A hand is considered **near the face** if
+
+\[
+\tilde d_{min}^{(sm)} < 0.35 \quad (4)
+\]
+
+The existing **zones** (forehead, cheeks, chin, nose) defined by a center landmark and a radius in face-width units remain valid and should be reused.[1]
+
+
+### 2.3 Mouth opening and chewing signal
+
+To differentiate BFRBs from eating, exploit **mouth opening** and its temporal pattern.
+Define
+
+\[
+M_t = \tilde{\text{dist}}(face[9], face[10]) = \frac{\text{dist}(\text{upperLip}, \text{lowerLip})}{faceWidth} \quad (5)
+\]
+
+Interpretation:
+
+- \(M_t < M_{closed}\): mouth essentially closed (e.g., \(M_{closed} \approx 0.03\)).
+- \(M_t > M_{open}\): mouth clearly open for eating or talking (e.g., \(M_{open} \approx 0.07\)).
+
+Track \(M_t\) over a sliding window of \(T_M\) frames (e.g., \(T_M \approx 60\) at 30 fps ≈ 2 s) and compute:
+
+- Mean opening \(\bar M\)
+- Standard deviation \(\sigma_M\)
+- Number of peaks where \(M_t\) crosses from below \(M_{open}\) to above it (chewing/bites count)
+
+Eating tends to produce repeated large openings (high \(\sigma_M\), multiple peaks), whereas nail biting, lip picking, or skin picking usually keep the mouth nearly closed or only slightly open.[2]
+
+
+### 2.4 Wrist and fingertip micro-motion
+
+The current engine uses smoothed wrist velocity to filter out fast motions.[1]
+To further split BFRBs from neutral face-resting, track **micro-motions** in a short window.
+
+For any scalar signal \(x_t\) over a window of \(T\) frames (e.g., 30–60 frames):
+
+- Amplitude \(A_x = \max(x_t) - \min(x_t)\)
+- Zero-crossing count of \(\Delta x_t = x_t - x_{t-1}\) (how often it changes direction)
+
+Useful choices of \(x_t\):
+
+- Distance from grabPoint to a zone center (for hair pulling and skin picking)
+- Mouth opening \(M_t\) (for chewing vs still mouth)
+- Thumb–index distance (for pinch pulsations)
+
+Heuristically:
+
+- BFRBs show **moderate amplitude** micro-motions (e.g., \(0.01–0.05\) face widths) and **frequent direction changes** (scratching, picking, nibbling at nails).
+- Neutral face-resting shows **near-zero amplitude** and very few direction changes (the hand is static).
+
+
+### 2.5 Pinch and cluster refinement
+
+The system already defines **pinch strength** (thumb–index and thumb–middle) and **fingertip cluster strength**.[1]
+To reduce false positives from generic pinching (e.g., holding objects while eating), add a simple **shape descriptor**:
+
+Let
+
+- \(v_{TI} = hand[11] - hand[5]\) (index tip minus thumb tip, the pinch axis)
+- \(v_{WI} = hand[11] - hand\) (index tip minus wrist, finger direction)
+
+Define the cosine of the angle between these vectors:
+
+\[
+\cos \theta_{pinch} = \frac{v_{TI} \cdot v_{WI}}{\lVert v_{TI} \rVert\, \lVert v_{WI} \rVert} \quad (6)
+\]
+
+Intuition:
+
+- For **nail biting** or **lip picking**, the index finger tends to point roughly into the mouth, and thumb–index are aligned in that direction, so \(\cos \theta_{pinch}\) is relatively high (vectors roughly colinear).
+- For **holding an object** sideways (utensil, fork), the pinch axis is often closer to perpendicular to the direction from wrist to index tip, yielding lower \(\cos \theta_{pinch}\).
+
+This is not perfect, but it adds an extra discriminator that is hard to satisfy accidentally when eating if thresholds are tuned conservatively.
+
+
+## 3. Global Gating and Negative Detectors
+
+Every BFRB detection should be allowed only if it passes a **global gaiting pipeline** and no negative detector fires.
+
+### 3.1 Global positive gates (must all be true)
+
+For any BFRB event candidate:
+
+1. **Near-face gate**: \(\tilde d_{min}^{(sm)} < 0.35\) for at least some small number of frames (e.g., 5–10).
+2. **Slow-motion gate**: smoothed wrist velocity \(v_w^{(sm)} < 0.08\) in face-width units per frame (current threshold).
+3. **Dwell gate**: total dwell time in the zone ≥ \(T_{dwell}^{min}\) (e.g., 800–1200 ms), except for hair-pulling pinch–pull, which can trigger faster due to the unambiguous pull-back.[1]
+4. **Hand–face occlusion gate** (optional): a crude check that the projected hand bounding box overlaps the face bounding box to ensure true contact rather than wide passing.
+
+
+### 3.2 Negative detector: eating / drinking
+
+Use a combination of hand-to-mouth proximity, mouth opening, and temporal pattern to explicitly recognize eating-like episodes and veto BFRB events.
+
+Define an **eating score** over a sliding window:
+
+- Hand near mouth: \(\tilde{\text{dist}}(indexTip, upperLip) < 0.25\) or \(\tilde{\text{dist}}(thumbTip, upperLip) < 0.25\) for at least \(T_{nearMouth}\) ms.
+- Mouth opening: \(M_t > M_{open}\) frequently (e.g., mouth open for ≥ 30–40% of frames in the window).
+- Chewing/bite pattern: at least 1–2 large peaks in \(M_t\) where \(M_t\) crosses above \(M_{open}\) and back down.
+
+If these three conditions hold in the last \(T_E\) seconds (e.g., 2–4 s), declare **eatingLikely = true**, and **suppress all BFRB detections** in that window.
+This follows the same idea as When2Trigger, which trades a small detection delay for much lower false positives in eating detection.[2]
+
+
+### 3.3 Negative detector: passive face-resting
+
+A second negative detector aims at the case where the person simply rests their head on their hand.
+
+Signals:
+
+- Hand near cheek or jaw zone (cheek or chin zone active).
+- Wrist and fingertip micro-motion amplitudes **below** a very low threshold (e.g., amplitude of grabPoint distance to zone center \(< 0.01\) face widths over 1–2 s and very few direction changes).
+- Fingertip cluster strength low or moderate (hand is more flat/palm-based than tightly clustered).
+
+If these conditions hold for \(T_R\) seconds (e.g., > 2 s), declare **restingLikely = true** and veto BFRB detections in that interval.
+
+
+## 4. High-Precision Rules per BFRB Type
+
+The following sections assume that the global positive gates are satisfied and that **eatingLikely == false** and **restingLikely == false**.
+Thresholds are expressed in face-width units and should be tuned empirically with live data.
+
+
+### 4.1 Hair pulling (scalp, eyebrow, eyelash)
+
+Hair pulling is characterized by a **pinch near the scalp or brow** followed by a **pull-back movement away from the head**.[1]
+
+#### 4.1.1 Detection conditions
+
+**Shape and location:**
+
+- Strong pinch: smoothed pinch strength \(S_{pinch}^{(sm)} > 0.6\).
+- Fingertip cluster: \(S_{cluster}^{(sm)} > 0.2\) (fingers are somewhat clustered, but not fully bunched like skin picking).
+- Grab point in hair zone: \(\tilde{\text{dist}}(grabPoint, forehead) < R_{hair}\) with \(R_{hair} \approx 0.8\) as already used for scalp.[1]
+
+**Temporal pattern:**
+
+1. At time \(t_0\), pinch becomes strong and zone condition becomes true (pinch-onset).
+2. Record \(\tilde d_{hair}(t_0) = \tilde{\text{dist}}(grabPoint, forehead)\).
+3. Within \(T_{pull}\) ms (e.g., 500–800 ms), require a pull-back:
+\[
+\tilde d_{hair}(t) - \tilde d_{hair}(t_0) \geq 0.28 \quad \text{for some } t \in [t_0, t_0+T_{pull}] \quad (7)
+\]
+
+**Micro-motion filter:**
+
+- During the pull-back, wrist velocity should remain moderate (not a sudden large swing), and the pull distance should be monotonic increasing or mostly so.
+- After the pull, the pinch may relax; that is acceptable.
+
+**Additional discriminators vs scratching or adjusting hair:**
+
+- **Minimal pre-pinch micro-motion**: in the \(0.5\) s before \(t_0\), require relatively low micro-motion near the zone so that a long scratch (back-and-forth) does not qualify.
+- **Single distinct pull cluster**: multiple small oscillations in \(\tilde d_{hair}\) without a clear net increase above \(0.28\) face widths should not trigger.
+
+This rule is already close to the existing pinch–pull engine; the main additions are the explicit micro-motion filter and the requirement that the pull be a **net outward movement** rather than oscillatory scratching.[1]
+
+
+### 4.2 Skin picking (cheek, forehead, chin, neck)
+
+Skin picking involves **multi-finger clusters** that remain on a small skin patch and perform tiny repetitive motions, often without a large pull-away.[1]
+
+#### 4.2.1 Detection conditions
+
+**Shape and location:**
+
+- Strong cluster: smoothed cluster strength \(S_{cluster}^{(sm)} > 0.4\) (all fingertips close together).
+- Pinch may or may not be strong; require **either** pinch strength \(> 0.4\) or high cluster strength.
+- Grab point or fingertip centroid inside a skin zone (cheeks, chin, forehead, neck), e.g.:
+  - Left cheek: \(\tilde{\text{dist}}(centroid, leftCheek) < 0.55\)
+  - Right cheek, chin, neck similarly (existing radii).[1]
+
+**Temporal pattern:**
+
+Over a window \(T_P\) (e.g., 1.5–2 s) while near the zone:
+
+- Dwell time ≥ \(T_P\) with \(v_w^{(sm)} < 0.08\).
+- Micro-motion amplitude of grabPoint distance to zone center \(A_g\) in \(0.01–0.05\) face-widths.
+- Number of direction changes in \(\tilde{\text{dist}}(grabPoint, zoneCenter)\) above a small threshold (e.g., ≥ 3–4 zero crossings), indicating repeated small picking motions.
+
+**Resting veto:**
+
+- If \(A_g < 0.01\) and direction changes ≈ 0–1, treat as restingLikely and veto.
+
+This discriminates between **static resting** (very low micro-motion) and **active skin picking** (small, repeated adjustments of fingertip position on the skin).
+
+
+### 4.3 Nail biting
+
+Nail biting is a **hand-to-mouth dwell** where 1–2 fingertips stay at the upper lip/teeth region, with small oscillatory motion of the finger but without the large mouth openings and hand trajectories characteristic of eating.[1]
+
+#### 4.3.1 Detection conditions
+
+**Shape and location:**
+
+- Active fingertip: either indexTip or thumbTip.
+- Proximity: \(\tilde{\text{dist}}(indexTip, upperLip) < 0.18\) or \(\tilde{\text{dist}}(thumbTip, upperLip) < 0.18\).
+- Other fingertips not clustered: cluster strength moderate or low (nail biting typically uses one finger, not a full cluster).
+- Pinch shape: \(S_{pinch}^{(sm)}\) between \(0.2\) and \(0.6\) and \(\cos \theta_{pinch}\) above a threshold (e.g., > 0.4), indicating thumb–index alignment into the mouth rather than sideways object holding.
+
+**Temporal pattern:**
+
+- Dwell time near mouth ≥ \(T_N\) (e.g., 1.5–2 s).
+- Mouth opening small: \(M_t < M_{open}\) for most of the window (no large chewing-like openings).
+- Micro-motion: fingertip distance to upper lip shows small oscillations (amplitude \(0.01–0.03\) face widths) with several direction changes.
+
+**Eating veto:**
+
+- If mouth opening shows large peaks or repeated wide openings (chewing pattern) in the same window, treat as eatingLikely and veto.
+
+This distinguishes **nail biting** from **eating**, where mouth opening and hand trajectory are larger, and multiple fingers or utensils are often involved.[2]
+
+
+### 4.4 Nose picking
+
+Nose picking is characterized by a **single fingertip (usually index) at the nose tip/nostril** with low velocity and micro-motion at that specific point.[1]
+
+#### 4.4.1 Detection conditions
+
+**Location:**
+
+- Single-finger proximity: \(\tilde{\text{dist}}(indexTip, noseTip) < 0.16\).
+- Other fingertips not clustered tightly (low cluster strength).
+
+**Temporal pattern:**
+
+- Dwell ≥ \(T_{nose}\) (e.g., 1–1.5 s) with low wrist velocity.
+- Micro-motion amplitude of indexTip–nose distance \(A_{nose}\) in a modest band (e.g., \(0.01–0.03\) face widths), with a few direction changes.
+
+**Wiping exclusion:**
+
+- For nose wiping (short lateral swipes), the path of indexTip around the nose has larger lateral movement and higher peak velocity.
+- Explicitly reject windows where either:
+  - Peak indexTip velocity > a “fast swipe” threshold, or
+  - The projected path length of indexTip around the nose over \(T_{nose}\) exceeds a maximum (e.g., \(> 0.1\) face widths), indicating a long swipe rather than a localized pick.
+
+
+### 4.5 Lip picking / biting
+
+Lip picking uses the index or thumb fingertip at the **lower lip**, with small repeated motions but usually not large mouth openings.[1]
+
+#### 4.5.1 Detection conditions
+
+**Location and shape:**
+
+- \(\tilde{\text{dist}}(indexTip, lowerLip) < 0.16\) or \(\tilde{\text{dist}}(thumbTip, lowerLip) < 0.16\).
+- Cluster strength low or moderate (few fingers involved).
+- Pinch shape similar to nail biting but slightly lower required pinch strength, as lip picking may use a single finger.
+
+**Temporal pattern:**
+
+- Dwell ≥ \(T_L\) (1–2 s).
+- Mouth opening small to moderate; avoid patterns with large repeated openings (eating veto).
+- Micro-motion: fingertip–lip distance shows small oscillations, similar to nail biting.
+
+Again, the **eatingLikely** negative detector is crucial to avoid false positives when drinking or biting food at the lips.
+
+
+### 4.6 General face touching
+
+General face-touch BFRBs are less clearly defined clinically and may overlap with normal behaviors.[1]
+For a high-precision mode, it may be preferable to **only flag general face touching when it is both sustained and exhibits subtle micro-motions**, indicating an idle grooming or rubbing behavior rather than neutral resting.
+
+#### 4.6.1 Detection conditions
+
+- Hand near cheek, jaw, or temple zone for an extended dwell time (e.g., ≥ 3 s).
+- Wrist velocity low, but fingertip centroid shows small micro-motions (amplitude \(0.01–0.03\) face widths, several direction changes).
+- Exclude eatingLikely and restingLikely windows.
+
+If a more conservative behavior is preferred, general face touching could be **tracked but not alerted**, reserving alerts for more clearly harmful BFRBs like hair pulling, skin picking, and nail/nose picking.
+
+
+## 5. Strategies to Drive False Positives Toward Zero
+
+### 5.1 Multi-stage scoring instead of single binary rules
+
+Rather than firing a BFRB as soon as all conditions are barely met, assign a **confidence score** that aggregates:
+
+- Proximity score (how close to key landmarks)
+- Shape score (pinch vs cluster vs single-finger posture)
+- Temporal score (dwell length, micro-motion pattern)
+- Context score (penalty from eatingLikely or restingLikely)
+
+Only trigger alerts when this score exceeds a high threshold (e.g., ≥ 0.9), and use hysteresis so that once triggered, it remains active until the score falls below a lower threshold (e.g., 0.6), reducing flicker.
+This mirrors high-precision strategies used in BFRB wearables and eating detectors.[3][4][2]
+
+
+### 5.2 Explicit “noise classes” and personalization
+
+Gesture-recognition systems reduce false positives by training on many non-gesture motions and treating them as a **noise class**, then allowing per-user calibration.[6]
+Even without a full ML model, a similar idea can be applied:
+
+- Record short sessions of the user **eating, drinking, resting head on hand, adjusting glasses**, and treat these patterns as negative examples.
+- Adjust thresholds (e.g., for micro-motion amplitudes, mouth-open ratios, and pinch strengths) so that these personal negative examples fall well below BFRB confidence.
+
+This personalization is particularly effective because individuals differ widely in how they hold utensils, rest their face, or gesture.[6]
+
+
+### 5.3 Trade detection delay for precision
+
+Studies on just-in-time interventions emphasize that a small delay between the onset of a behavior and the alert is acceptable if it significantly reduces false positives.[4][2]
+For this system, that means:
+
+- Allowing 1–3 s windows to accumulate evidence (micro-motion patterns, chewing vs non-chewing) before firing, especially for nail biting, lip picking, and skin picking.
+- Using the instantaneous pinch–pull rule only for hair pulling, where the motion is distinctive and the cost of a slight delay may be higher.
+
+
+### 5.4 Use “hand-over-face” as a gating component
+
+Work on hand-over-face detection shows that explicitly modeling when the hand occludes the face can be used to filter or veto other detectors.[7]
+In this system, a simplified version can be implemented by checking if the bounding box of hand landmarks overlaps that of the face and if a significant fraction of face landmarks are spatially close to hand landmarks.
+
+Only when “hand-over-face” is true should skin picking, lip picking, and general face-touching BFRBs even be considered, further reducing spurious triggers from hand motions near but not actually on the face.
+
+
+## 6. Implementation Checklist
+
+A practical path to integrating these ideas into the existing JavaScript engine is:
+
+1. **Add mouth-opening metrics**: compute \(M_t\), its moving average and peaks.
+2. **Implement micro-motion tracking** for grabPoint–zone distance, mouth opening, and thumb–index distance over sliding windows.
+3. **Implement eatingLikely and restingLikely negative detectors** using the rules above.
+4. **Refine hair-pulling logic** to enforce a clear net pull-back and filter out oscillatory scratching.
+5. **Implement per-BFRB modules** (hair, skin, nail, nose, lip, general) that each output a confidence score.
+6. **Combine scores** into a global BFRB score with hysteresis; only trigger when global score is high and negative detectors are off.
+7. **Provide calibration UI** so users can tune sensitivity and optionally record personal negative examples (e.g., eating) to adjust thresholds.
+
+Following these steps should significantly reduce false positives from eating and neutral face-resting while preserving sensitivity to true BFRB patterns, within the limits of what can be inferred from 2D hand and face landmarks alone.

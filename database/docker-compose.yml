@@ -1,0 +1,19 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: bfrb_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: bfrb_root_2026
+      MYSQL_DATABASE: bfrb_detection
+      MYSQL_USER: bfrb_user
+      MYSQL_PASSWORD: bfrb_pass_2026
+    ports:
+      - "3306:3306"
+    volumes:
+      - bfrb_mysql_data:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+
+volumes:
+  bfrb_mysql_data:

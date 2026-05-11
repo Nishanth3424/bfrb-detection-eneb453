@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Technical Report: Kaggle CMI Sensor → MediaPipe Feature Transformation Attempt</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f8fafc;
+    color: #1e293b;
+    line-height: 1.7;
+  }
+  .page { max-width: 900px; margin: 0 auto; padding: 48px 40px; }
+
+  /* Cover */
+  .cover {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    color: white;
+    padding: 56px 40px;
+    border-radius: 12px;
+    margin-bottom: 40px;
+  }
+  .cover .tag {
+    display: inline-block;
+    background: rgba(239,68,68,0.25);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+    font-size: 0.75rem;
+    padding: 4px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .cover h1 { font-size: 1.9rem; font-weight: 700; line-height: 1.3; margin-bottom: 12px; }
+  .cover .subtitle { font-size: 1rem; color: #94a3b8; margin-bottom: 24px; }
+  .cover .meta { display: flex; gap: 32px; flex-wrap: wrap; }
+  .cover .meta-item label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; display: block; }
+  .cover .meta-item span  { font-size: 0.9rem; color: #e2e8f0; }
+
+  /* Sections */
+  h2 { font-size: 1.3rem; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin: 40px 0 16px; }
+  h3 { font-size: 1.05rem; color: #1e3a5f; margin: 24px 0 10px; }
+  p  { margin-bottom: 14px; color: #334155; }
+  ul, ol { padding-left: 24px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; color: #334155; }
+
+  /* Info boxes */
+  .box { border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+  .box.blue   { background: #eff6ff; border-left: 4px solid #3b82f6; }
+  .box.red    { background: #fef2f2; border-left: 4px solid #ef4444; }
+  .box.green  { background: #f0fdf4; border-left: 4px solid #22c55e; }
+  .box.yellow { background: #fffbeb; border-left: 4px solid #f59e0b; }
+  .box strong { display: block; margin-bottom: 6px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .box.blue strong   { color: #1d4ed8; }
+  .box.red strong    { color: #dc2626; }
+  .box.green strong  { color: #16a34a; }
+  .box.yellow strong { color: #d97706; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 0.88rem; }
+  th { background: #0f172a; color: #e2e8f0; padding: 10px 14px; text-align: left; }
+  td { padding: 9px 14px; border-bottom: 1px solid #e2e8f0; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .tag-bfrb    { background: #fef2f2; color: #dc2626; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+  .tag-gap     { background: #fffbeb; color: #b45309; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+  .tag-ok      { background: #f0fdf4; color: #15803d; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+
+  /* Code */
+  code { background: #1e293b; color: #7dd3fc; padding: 2px 7px; border-radius: 4px; font-size: 0.83rem; font-family: 'Cascadia Code', 'Consolas', monospace; }
+  pre  { background: #0f172a; color: #e2e8f0; padding: 18px 20px; border-radius: 8px; overflow-x: auto; font-size: 0.82rem; margin: 16px 0; line-height: 1.6; font-family: 'Cascadia Code', 'Consolas', monospace; }
+  pre .c  { color: #64748b; }
+  pre .k  { color: #c084fc; }
+  pre .s  { color: #86efac; }
+  pre .n  { color: #7dd3fc; }
+
+  /* Screenshots */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .chart-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: white;
+  }
+  .chart-box img { width: 100%; display: block; }
+  .chart-box .caption {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    color: #64748b;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    text-align: center;
+  }
+  .chart-box.full { grid-column: 1 / -1; }
+
+  /* Metrics row */
+  .metrics { display: flex; gap: 16px; margin: 20px 0; flex-wrap: wrap; }
+  .metric-card {
+    flex: 1; min-width: 120px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+  .metric-card .val { font-size: 2rem; font-weight: 700; color: #0f172a; }
+  .metric-card .lbl { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .metric-card.green .val { color: #16a34a; }
+  .metric-card.red   .val { color: #dc2626; }
+  .metric-card.blue  .val { color: #1d4ed8; }
+
+  /* Verdict */
+  .verdict {
+    background: linear-gradient(135deg, #1e3a5f, #0f172a);
+    color: white;
+    padding: 28px 32px;
+    border-radius: 10px;
+    margin: 32px 0;
+  }
+  .verdict h3 { color: #f1f5f9; font-size: 1.1rem; margin-bottom: 10px; margin-top: 0; }
+  .verdict p  { color: #94a3b8; margin-bottom: 0; }
+
+  /* Footer */
+  footer { text-align: center; color: #94a3b8; font-size: 0.78rem; margin-top: 48px; padding-top: 24px; border-top: 1px solid #e2e8f0; }
+
+  @media print {
+    .page { max-width: 100%; padding: 20px; }
+    .cover { border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── COVER ─────────────────────────────────────────────────── -->
+  <div class="cover">
+    <div class="tag">Methodology Documentation — Approach v1</div>
+    <h1>Kaggle CMI Sensor Data &rarr; MediaPipe Feature Transformation</h1>
+    <div class="subtitle">Technical Report: What Was Attempted, Results Achieved, and Why It Fails as a Production Solution</div>
+    <div class="meta">
+      <div class="meta-item"><label>Project</label><span>ENEB453 — BFRB Detection Web App</span></div>
+      <div class="meta-item"><label>Author</label><span>Nishanth Tiglao</span></div>
+      <div class="meta-item"><label>Date</label><span>April 13, 2026</span></div>
+      <div class="meta-item"><label>Status</label><span style="color:#fca5a5">Superseded — Documented for Reference</span></div>
+    </div>
+  </div>
+
+  <!-- ── 1. EXECUTIVE SUMMARY ──────────────────────────────────── -->
+  <h2>1. Executive Summary</h2>
+  <p>
+    This report documents the first technical approach attempted for real-time BFRB (Body-Focused
+    Repetitive Behavior) detection: training a machine learning model on the
+    <strong>Kaggle Child Mind Institute (CMI) Detect Behavior with Sensor Data</strong> dataset,
+    then applying that model to live <strong>MediaPipe</strong> webcam data.
+  </p>
+  <p>
+    The approach achieved <strong>77% accuracy and AUC-ROC 0.837</strong> on the Kaggle test set,
+    but produced <strong>excessive false positives</strong> in real webcam deployment due to a
+    fundamental <em>domain gap</em> between the two data sources. This report explains exactly
+    what was built, the results obtained, and the technical reasons this approach is
+    insufficient for a production system.
+  </p>
+
+  <div class="box red">
+    <strong>Key Finding</strong>
+    The core problem is that we trained a classifier on physical wrist-sensor measurements
+    (millimeters, degrees Celsius, m/s&sup2;) and tried to apply it to image-coordinate
+    distances from a camera. Even after normalization, the decision boundaries learned from
+    sensor data do not transfer cleanly to landmark distances, causing the model to fire
+    on normal hand movements.
+  </div>
+
+  <!-- ── 2. DATASET ─────────────────────────────────────────────── -->
+  <h2>2. The Kaggle CMI Dataset</h2>
+
+  <h3>2.1 Overview</h3>
+  <p>
+    The <strong>CMI Detect Behavior with Sensor Data</strong> competition dataset was collected
+    using a custom wrist-worn device called <em>Helios</em>. Subjects wore the bracelet while
+    performing labeled BFRB gestures (e.g., nail biting, hair pulling, face touching) and
+    control activities (e.g., texting, writing, waving).
+  </p>
+
+  <table>
+    <tr><th>Property</th><th>Value</th></tr>
+    <tr><td>Total rows (timesteps)</td><td>574,945</td></tr>
+    <tr><td>Total gesture sequences</td><td>8,151</td></tr>
+    <tr><td>BFRB sequences</td><td>5,272 (64.7%)</td></tr>
+    <tr><td>Non-BFRB sequences</td><td>2,879 (35.3%)</td></tr>
+    <tr><td>Total columns per row</td><td>341</td></tr>
+    <tr><td>Sensor sampling rate</td><td>~10 Hz (inferred)</td></tr>
+  </table>
+
+  <h3>2.2 Sensor Columns</h3>
+  <table>
+    <tr><th>Column(s)</th><th>Sensor Type</th><th>Units</th><th>Description</th></tr>
+    <tr><td><code>acc_x, acc_y, acc_z</code></td><td>Accelerometer (IMU)</td><td>m/s&sup2;</td><td>3-axis wrist acceleration</td></tr>
+    <tr><td><code>rot_w, rot_x, rot_y, rot_z</code></td><td>Quaternion (IMU)</td><td>dimensionless</td><td>Wrist 3D orientation</td></tr>
+    <tr><td><code>thm_1 .. thm_5</code></td><td>Thermal (5 sensors)</td><td>&deg;C</td><td>Skin contact warmth detection</td></tr>
+    <tr><td><code>tof_1_v0 .. tof_5_v63</code></td><td>Time-of-Flight (5 sensors, 8&times;8 grid)</td><td>mm</td><td>Spatial depth map around wrist (320 values total)</td></tr>
+  </table>
+
+  <div class="box blue">
+    <strong>Note on ToF Sensors</strong>
+    Each ToF sensor produces an 8&times;8 pixel depth grid (64 values), making a spatial
+    proximity map around the wrist. A value of -1 means out of range. These are particularly
+    rich: when a finger approaches the face, the grid shows a cluster of low-distance readings
+    (~50-100mm) rather than a single number.
+  </div>
+
+  <h3>2.3 Top Gestures in Dataset</h3>
+  <table>
+    <tr><th>Gesture</th><th>Category</th><th>Sequences</th></tr>
+    <tr><td>Forehead — pull hairline</td><td><span class="tag-bfrb">BFRB</span></td><td>640</td></tr>
+    <tr><td>Neck — pinch skin</td><td><span class="tag-bfrb">BFRB</span></td><td>640</td></tr>
+    <tr><td>Text on phone</td><td><span class="tag-ok">No-BFRB</span></td><td>640</td></tr>
+    <tr><td>Neck — scratch</td><td><span class="tag-ok">No-BFRB</span></td><td>640</td></tr>
+    <tr><td>Forehead — scratch</td><td><span class="tag-bfrb">BFRB</span></td><td>640</td></tr>
+    <tr><td>Eyelash — pull hair</td><td><span class="tag-bfrb">BFRB</span></td><td>640</td></tr>
+    <tr><td>Above ear — pull hair</td><td><span class="tag-bfrb">BFRB</span></td><td>638</td></tr>
+    <tr><td>Eyebrow — pull hair</td><td><span class="tag-bfrb">BFRB</span></td><td>638</td></tr>
+    <tr><td>Cheek — pinch skin</td><td><span class="tag-bfrb">BFRB</span></td><td>637</td></tr>
+    <tr><td>Wave hello</td><td><span class="tag-ok">No-BFRB</span></td><td>478</td></tr>
+  </table>
+
+  <!-- ── 3. TRANSFORMATION APPROACH ───────────────────────────── -->
+  <h2>3. Feature Transformation Approach</h2>
+
+  <h3>3.1 Core Concept</h3>
+  <p>
+    The central hypothesis was that both the Kaggle wrist sensor and MediaPipe landmarks
+    measure the same underlying physical reality — a hand performing a gesture — through
+    different sensing modalities. If we could map both into a common semantic feature space,
+    a model trained on Kaggle data could classify MediaPipe data.
+  </p>
+
+  <div class="chart-grid">
+    <div class="chart-box full">
+      <img src="feature_mapping_diagram.png" alt="Feature Mapping Diagram"/>
+      <div class="caption">Figure 1: The proposed feature mapping from Kaggle sensor columns to MediaPipe landmark distances, through a shared 16-feature normalized space.</div>
+    </div>
+  </div>
+
+  <h3>3.2 Feature Engineering (16 Features)</h3>
+  <table>
+    <tr><th>#</th><th>Feature Name</th><th>Kaggle Source</th><th>MediaPipe Analog</th></tr>
+    <tr><td>1</td><td><code>acc_mag_mean</code></td><td>Mean of sqrt(acc_x&sup2; + acc_y&sup2; + acc_z&sup2;) over sequence</td><td>Mean wrist landmark velocity per frame</td></tr>
+    <tr><td>2</td><td><code>acc_mag_std</code></td><td>Std of acceleration magnitude</td><td>Std of wrist velocity</td></tr>
+    <tr><td>3</td><td><code>acc_mag_max</code></td><td>Max acceleration magnitude</td><td>Max wrist velocity</td></tr>
+    <tr><td>4</td><td><code>rot_speed_mean</code></td><td>Mean frame-to-frame quaternion change magnitude</td><td>Mean palm normal vector direction change</td></tr>
+    <tr><td>5</td><td><code>thm_mean</code></td><td>Mean of all 5 thermal sensors (&deg;C)</td><td>Mean fraction of fingertips within 0.18 radius of nose</td></tr>
+    <tr><td>6</td><td><code>thm_max</code></td><td>Max thermal reading (&deg;C)</td><td>Max hand-face overlap fraction per frame</td></tr>
+    <tr><td>7–8</td><td><code>tof1_min/mean_mean</code></td><td>Avg of per-row min/mean of ToF sensor 1 8&times;8 grid (mm)</td><td>Wrist-to-nose Euclidean distance (normalized coords)</td></tr>
+    <tr><td>9–10</td><td><code>tof2_min/mean_mean</code></td><td>ToF sensor 2</td><td>Index fingertip-to-mouth distance</td></tr>
+    <tr><td>11–12</td><td><code>tof3_min/mean_mean</code></td><td>ToF sensor 3</td><td>Thumb tip-to-cheek distance</td></tr>
+    <tr><td>13–14</td><td><code>tof4_min/mean_mean</code></td><td>ToF sensor 4</td><td>Palm center-to-forehead distance</td></tr>
+    <tr><td>15–16</td><td><code>tof5_min/mean_mean</code></td><td>ToF sensor 5</td><td>Wrist-to-chin distance</td></tr>
+  </table>
+
+  <h3>3.3 Extraction Code (Kaggle Side)</h3>
+  <pre><span class="k">def</span> <span class="n">extract_features</span>(group: pd.DataFrame) -> dict:
+    <span class="c"># 1-3: Accelerometer magnitude statistics</span>
+    acc_mag = np.sqrt(group[<span class="s">"acc_x"</span>]**2 + group[<span class="s">"acc_y"</span>]**2 + group[<span class="s">"acc_z"</span>]**2)
+    feats[<span class="s">"acc_mag_mean"</span>] = acc_mag.mean()
+    feats[<span class="s">"acc_mag_std"</span>]  = acc_mag.std()
+    feats[<span class="s">"acc_mag_max"</span>]  = acc_mag.max()
+
+    <span class="c"># 4: Quaternion frame-to-frame change = rotation speed</span>
+    rot  = group[[<span class="s">"rot_w"</span>,<span class="s">"rot_x"</span>,<span class="s">"rot_y"</span>,<span class="s">"rot_z"</span>]].values
+    diff = np.diff(rot, axis=0)
+    feats[<span class="s">"rot_speed_mean"</span>] = np.sqrt((diff**2).sum(axis=1)).mean()
+
+    <span class="c"># 5-6: Thermal sensors (skin contact / warmth)</span>
+    thm = group[[c for c in group.columns if c.startswith(<span class="s">"thm_"</span>)]].values
+    feats[<span class="s">"thm_mean"</span>] = thm.mean()
+    feats[<span class="s">"thm_max"</span>]  = thm.max()
+
+    <span class="c"># 7-16: ToF 8x8 depth grids (per-row min + mean, averaged over sequence)</span>
+    <span class="k">for</span> s <span class="k">in</span> range(1, 6):
+        cols = [f<span class="s">"tof_{s}_v{i}"</span> for i in range(64)]
+        mat  = group[cols].values.astype(float)
+        mat[mat < 0] = np.nan          <span class="c"># -1 = out of range</span>
+        row_mins  = np.nanmin(mat, axis=1)   <span class="c"># closest object per timestep</span>
+        row_means = np.nanmean(mat, axis=1)  <span class="c"># avg proximity per timestep</span>
+        feats[f<span class="s">"tof{s}_min_mean"</span>]  = row_mins.mean()
+        feats[f<span class="s">"tof{s}_mean_mean"</span>] = row_means.mean()</pre>
+
+  <h3>3.4 Normalization</h3>
+  <p>
+    All 16 features were normalized to [0, 1] using <code>MinMaxScaler</code> fitted on the
+    Kaggle training data. The MediaPipe features were manually mapped to [0, 1] by dividing
+    by their expected maximum values (velocity / 0.15, distances / 0.8, overlap fraction
+    already in [0,1]).
+  </p>
+
+  <!-- ── 4. MODEL ──────────────────────────────────────────────── -->
+  <h2>4. Model Training Results</h2>
+
+  <div class="metrics">
+    <div class="metric-card blue"><div class="val">8,151</div><div class="lbl">Sequences</div></div>
+    <div class="metric-card blue"><div class="val">574,945</div><div class="lbl">Total Rows</div></div>
+    <div class="metric-card green"><div class="val">77%</div><div class="lbl">Test Accuracy</div></div>
+    <div class="metric-card green"><div class="val">0.837</div><div class="lbl">AUC-ROC</div></div>
+    <div class="metric-card"><div class="val">0.82</div><div class="lbl">BFRB F1</div></div>
+    <div class="metric-card red"><div class="val">0.68</div><div class="lbl">No-BFRB F1</div></div>
+  </div>
+
+  <h3>4.1 Classification Report (on Kaggle test set)</h3>
+  <table>
+    <tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1-Score</th><th>Support</th></tr>
+    <tr><td>No-BFRB</td><td>0.66</td><td>0.69</td><td>0.68</td><td>576</td></tr>
+    <tr><td>BFRB</td><td>0.83</td><td>0.81</td><td>0.82</td><td>1,055</td></tr>
+    <tr><td><strong>Accuracy</strong></td><td></td><td></td><td><strong>0.77</strong></td><td>1,631</td></tr>
+  </table>
+
+  <div class="chart-grid">
+    <div class="chart-box">
+      <img src="confusion_matrix.png" alt="Confusion Matrix"/>
+      <div class="caption">Figure 2: Confusion matrix on 1,631 test sequences. 853 BFRB correctly identified, but 179 No-BFRB sequences misclassified as BFRB.</div>
+    </div>
+    <div class="chart-box">
+      <img src="roc_curve.png" alt="ROC Curve"/>
+      <div class="caption">Figure 3: ROC curve showing AUC = 0.837. Solid performance on Kaggle data, but this does not transfer to webcam data.</div>
+    </div>
+    <div class="chart-box">
+      <img src="class_distribution.png" alt="Class Distribution"/>
+      <div class="caption">Figure 4: Dataset class distribution. BFRB sequences outnumber No-BFRB 5,272 to 2,879. class_weight="balanced" was used to compensate.</div>
+    </div>
+    <div class="chart-box">
+      <img src="feature_importances.png" alt="Feature Importances"/>
+      <div class="caption">Figure 5: Random Forest feature importances. thm_max (thermal peak) was the most important feature at 13.8% — a critical issue for the domain gap.</div>
+    </div>
+    <div class="chart-box full">
+      <img src="feature_distributions.png" alt="Feature Distributions"/>
+      <div class="caption">Figure 6: Box plots of the top 8 features by importance, split by class. Visible separation exists for thm_max and tof2/3 features in Kaggle data, but this separation does not translate to MediaPipe-derived features.</div>
+    </div>
+  </div>
+
+  <!-- ── 5. WHY IT FAILS ───────────────────────────────────────── -->
+  <h2>5. Why This Approach Fails in Practice</h2>
+
+  <div class="box red">
+    <strong>Root Cause: Domain Gap</strong>
+    The model was trained on physical wrist sensor readings and evaluated against normalized
+    image-coordinate landmark distances. These are fundamentally different data types.
+    The decision boundaries the Random Forest learned from Kaggle data do not generalize
+    to MediaPipe's output space.
+  </div>
+
+  <h3>Problem 1: The Thermal-to-Overlap Mapping is Semantically Wrong</h3>
+  <p>
+    <code>thm_max</code> was the single most important feature (13.8% importance). The
+    Kaggle thermal sensors measure actual skin temperature (~28–40&deg;C) — they detect
+    <em>sustained physical skin contact</em>, which is a true signal of hair pulling or
+    skin picking. The MediaPipe analog I used was "fraction of fingertips within 0.18
+    normalized radius of the nose landmark."
+  </p>
+  <p>
+    This analog fires incorrectly because:
+  </p>
+  <ul>
+    <li>Raising your hand anywhere in the camera frame can put fingertips within that radius</li>
+    <li>The 0.18 threshold was not calibrated to any real-world measurement</li>
+    <li>It activates for normal gestures like pointing at something above your head</li>
+  </ul>
+
+  <h3>Problem 2: Scale Mismatch After Normalization</h3>
+  <p>
+    Kaggle ToF readings range from ~50–300mm. After MinMaxScaler:
+    a "touching face" reading (~60mm) normalizes to ~0.04.
+    MediaPipe landmark distances range from 0.0 to ~0.8 (normalized image coordinates).
+    A "touching face" landmark distance (~0.03) normalizes to ~0.04 too — so far so good.
+    But the variance around those values is completely different:
+  </p>
+  <ul>
+    <li>Kaggle "not touching": ~200mm → normalized ~0.63</li>
+    <li>MediaPipe "hand at rest far from face": ~0.4 → normalized ~0.50</li>
+  </ul>
+  <p>
+    The RF's decision boundary was set at a threshold in Kaggle's normalized space.
+    That threshold does not correspond to the same physical event in MediaPipe's space.
+  </p>
+
+  <h3>Problem 3: Wrist Sensor vs. Camera Perspective</h3>
+  <p>
+    The Kaggle device measures distance <em>outward from the wrist</em> in physical space.
+    MediaPipe measures distances <em>in 2D normalized image coordinates</em>. A hand at the
+    side of the frame vs. the center will have very different landmark distances to the face,
+    even if physically the same proximity. Camera angle, subject position, and frame
+    cropping all affect MediaPipe distances in ways that have no analog in wrist sensor data.
+  </p>
+
+  <h3>Problem 4: No Temporal Modeling</h3>
+  <p>
+    The Kaggle features were computed per-sequence (aggregated statistics over an entire
+    gesture). The MediaPipe system used a 30-frame rolling window (~1 second). This means:
+  </p>
+  <ul>
+    <li>A 1-second window can capture mid-gesture, not a complete gesture like Kaggle sequences</li>
+    <li>Transition frames (hand moving toward face) get classified the same as sustained BFRB</li>
+    <li>No dwell time modeling — the model has no concept of "how long has the hand been there"</li>
+  </ul>
+
+  <h3>Problem 5: Model Never Saw Camera Data</h3>
+  <p>
+    The Random Forest was trained entirely on wrist sensor data. It has never seen a single
+    frame of camera-derived landmark data. Transfer learning without fine-tuning on target
+    domain data is expected to underperform. The 77% accuracy metric is only valid for the
+    Kaggle test set; real-world webcam accuracy was not measured but observed to be poor.
+  </p>
+
+  <!-- ── 6. SUMMARY TABLE ──────────────────────────────────────── -->
+  <h2>6. Summary: What Worked vs. What Failed</h2>
+  <table>
+    <tr><th>Component</th><th>Status</th><th>Notes</th></tr>
+    <tr><td>Kaggle data loading &amp; parsing</td><td><span class="tag-ok">WORKED</span></td><td>574,945 rows, 341 columns processed correctly</td></tr>
+    <tr><td>ToF 8x8 grid summarization</td><td><span class="tag-ok">WORKED</span></td><td>Min/mean per row, averaged across sequence</td></tr>
+    <tr><td>Random Forest on Kaggle features</td><td><span class="tag-ok">WORKED</span></td><td>77% accuracy, AUC 0.837 on Kaggle test set</td></tr>
+    <tr><td>Accelerometer &rarr; velocity mapping</td><td><span class="tag-ok">REASONABLE</span></td><td>Semantic similarity; scale different but pattern preserved</td></tr>
+    <tr><td>Quaternion &rarr; palm normal mapping</td><td><span class="tag-ok">REASONABLE</span></td><td>Both measure rotation rate; similar semantic meaning</td></tr>
+    <tr><td>ToF proximity &rarr; landmark distance mapping</td><td><span class="tag-gap">DOMAIN GAP</span></td><td>Different scales; normalization does not fully bridge</td></tr>
+    <tr><td>Thermal &rarr; face overlap mapping</td><td><span class="tag-bfrb">FAILED</span></td><td>Semantically wrong; thermal = skin contact, overlap = spatial proximity</td></tr>
+    <tr><td>Model generalization to MediaPipe</td><td><span class="tag-bfrb">FAILED</span></td><td>False positive rate too high for usable detection</td></tr>
+    <tr><td>No temporal/dwell modeling</td><td><span class="tag-bfrb">MISSING</span></td><td>Critical for BFRB vs. incidental touch discrimination</td></tr>
+  </table>
+
+  <!-- ── 7. VERDICT ───────────────────────────────────────────── -->
+  <div class="verdict">
+    <h3>Conclusion</h3>
+    <p>
+      The Kaggle CMI &rarr; MediaPipe transformation is a valid <em>research exploration</em>
+      but is not a viable production approach for this web application. The domain gap
+      between physical sensor measurements and image-coordinate landmark data is
+      fundamentally too large to bridge with simple normalization. The model achieved
+      solid performance on sensor data (AUC 0.837) but cannot generalize to camera data
+      without retraining on actual webcam-derived labeled examples.
+    </p>
+    <p style="margin-top:12px">
+      The correct approach — supported by published research and existing BFRB apps
+      (BFRBye, Hands Off, StopBitingNails) — is a rule-based detector with adaptive
+      thresholds, temporal dwell-time modeling, and velocity filtering applied
+      <em>directly</em> to MediaPipe landmarks, with no cross-domain model transfer.
+    </p>
+  </div>
+
+  <!-- ── 8. FILES ──────────────────────────────────────────────── -->
+  <h2>7. Archived Files</h2>
+  <table>
+    <tr><th>File</th><th>Description</th></tr>
+    <tr><td><code>transform_and_train.py</code></td><td>Full Kaggle feature extraction + RF training pipeline</td></tr>
+    <tr><td><code>model/bfrb_model.pkl</code></td><td>Trained Random Forest (200 trees, balanced)</td></tr>
+    <tr><td><code>model/scaler.pkl</code></td><td>MinMaxScaler fitted on Kaggle features</td></tr>
+    <tr><td><code>model/feature_meta.json</code></td><td>Feature names, descriptions, normalization bounds</td></tr>
+    <tr><td><code>templates/index_kaggle_v1.html</code></td><td>Original web app using Kaggle-trained model</td></tr>
+    <tr><td><code>report_assets/*.png</code></td><td>Training charts: ROC, confusion matrix, feature importances, etc.</td></tr>
+  </table>
+
+  <footer>
+    ENEB453 Web-Based Application Development &mdash; Spring 2026 &mdash; Nishanth Tiglao
+    &mdash; Report generated April 13, 2026
+  </footer>
+
+</div>
+</body>
+</html>

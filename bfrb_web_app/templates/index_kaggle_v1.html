@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BFRB Detection System</title>
+
+  <!-- MediaPipe Holistic (hands + face + pose in one call) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0a0e1a;
+      color: #e0e6f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 16px 28px;
+      background: #111827;
+      border-bottom: 1px solid #1f2d45;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header .dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    header h1 { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; }
+    header p  { font-size: 0.75rem; color: #64748b; margin-top: 1px; }
+
+    .main {
+      display: flex;
+      flex: 1;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    /* ── Video panel ──────────────────────────────────────────── */
+    .video-panel {
+      position: relative;
+      flex: 1;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #input_video { display: none; }
+    #output_canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    /* Alert overlay on video */
+    .alert-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border: 4px solid transparent;
+      transition: border-color 0.3s, background 0.3s;
+      pointer-events: none;
+      border-radius: 0;
+    }
+    .alert-overlay.bfrb {
+      border-color: #ef4444;
+      background: rgba(239,68,68,0.06);
+    }
+
+    /* BFRB label on video */
+    .video-label {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 28px;
+      border-radius: 30px;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      transition: all 0.3s;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+    }
+    .video-label.bfrb    { background: rgba(239,68,68,0.85); color: #fff; }
+    .video-label.no-bfrb { background: rgba(16,185,129,0.75); color: #fff; }
+    .video-label.waiting { background: rgba(71,85,105,0.7);   color: #94a3b8; font-size: 0.85rem; }
+
+    /* ── Side panel ───────────────────────────────────────────── */
+    .side-panel {
+      width: 320px;
+      background: #111827;
+      border-left: 1px solid #1f2d45;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    .card {
+      background: #1a2235;
+      border: 1px solid #1f2d45;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .card h2 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #475569;
+      margin-bottom: 12px;
+    }
+
+    /* Prediction card */
+    .prediction-card .pred-label {
+      font-size: 1.5rem;
+      font-weight: 700;
+      transition: color 0.3s;
+    }
+    .pred-label.bfrb    { color: #ef4444; }
+    .pred-label.no-bfrb { color: #10b981; }
+    .pred-label.waiting { color: #475569; }
+
+    .confidence-bar-wrap {
+      margin-top: 10px;
+    }
+    .confidence-bar-wrap .label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .confidence-bar {
+      height: 8px;
+      background: #0f172a;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .confidence-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s, background 0.4s;
+      background: #10b981;
+    }
+    .confidence-fill.bfrb { background: #ef4444; }
+
+    /* Feature bars */
+    .feature-list { display: flex; flex-direction: column; gap: 6px; }
+    .feature-item { }
+    .feature-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      color: #64748b;
+      margin-bottom: 2px;
+    }
+    .feature-bar-bg {
+      height: 5px;
+      background: #0f172a;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .feature-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s;
+    }
+
+    /* Status / log */
+    .log {
+      font-size: 0.7rem;
+      color: #475569;
+      line-height: 1.7;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .log .entry { border-bottom: 1px solid #1f2d45; padding: 2px 0; }
+    .log .entry.warn  { color: #f59e0b; }
+    .log .entry.error { color: #ef4444; }
+    .log .entry.good  { color: #10b981; }
+
+    /* Stats row */
+    .stats-row {
+      display: flex;
+      gap: 8px;
+    }
+    .stat-box {
+      flex: 1;
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .stat-box .val {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+    .stat-box .lbl {
+      font-size: 0.62rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 2px;
+    }
+
+    /* How-it-works toggle */
+    details summary {
+      cursor: pointer;
+      font-size: 0.72rem;
+      color: #3b82f6;
+      user-select: none;
+      margin-bottom: 6px;
+    }
+    details p, details li {
+      font-size: 0.7rem;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 4px;
+    }
+    details ul { padding-left: 14px; }
+
+    @media (max-width: 700px) {
+      .main { flex-direction: column; }
+      .side-panel { width: 100%; border-left: none; border-top: 1px solid #1f2d45; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="status-dot"></div>
+  <div>
+    <h1>BFRB Detection System</h1>
+    <p>Real-time Body-Focused Repetitive Behavior Detection via MediaPipe + Kaggle-trained model</p>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ── Video Panel ─────────────────────────────────────────── -->
+  <div class="video-panel">
+    <video id="input_video" autoplay muted playsinline></video>
+    <canvas id="output_canvas"></canvas>
+    <div class="alert-overlay" id="alert-overlay"></div>
+    <div class="video-label waiting" id="video-label">Initializing camera...</div>
+  </div>
+
+  <!-- ── Side Panel ──────────────────────────────────────────── -->
+  <div class="side-panel">
+
+    <!-- Prediction -->
+    <div class="card prediction-card">
+      <h2>Prediction</h2>
+      <div class="pred-label waiting" id="pred-label">Waiting...</div>
+      <div class="confidence-bar-wrap">
+        <div class="label-row">
+          <span>BFRB Probability</span>
+          <span id="conf-text">—</span>
+        </div>
+        <div class="confidence-bar">
+          <div class="confidence-fill" id="conf-fill" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live stats -->
+    <div class="card">
+      <h2>Session Stats</h2>
+      <div class="stats-row">
+        <div class="stat-box"><div class="val" id="stat-fps">0</div><div class="lbl">FPS</div></div>
+        <div class="stat-box"><div class="val" id="stat-bfrb">0</div><div class="lbl">BFRB Events</div></div>
+        <div class="stat-box"><div class="val" id="stat-pct">0%</div><div class="lbl">BFRB Time</div></div>
+      </div>
+    </div>
+
+    <!-- Feature bars (the 16 features, live) -->
+    <div class="card">
+      <h2>Feature Window (MediaPipe → Model)</h2>
+      <div class="feature-list" id="feature-list">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="card">
+      <h2>How It Works</h2>
+      <details>
+        <summary>View explanation</summary>
+        <p>This system bridges two data sources:</p>
+        <ul>
+          <li><b>Training:</b> Kaggle CMI wrist sensor data (acc/gyro/ToF/thermal) with labeled BFRB gestures.</li>
+          <li><b>Inference:</b> MediaPipe landmarks extracted from your webcam in real-time.</li>
+        </ul>
+        <p style="margin-top:6px">Both are transformed into the same 16 semantic features:</p>
+        <ul>
+          <li>Movement intensity ← acceleration / wrist velocity</li>
+          <li>Rotation speed ← quaternion / palm normal change</li>
+          <li>Skin contact ← thermal sensors / hand-face overlap</li>
+          <li>Proximity ← ToF depth grid / landmark distances</li>
+        </ul>
+        <p style="margin-top:6px">A Random Forest classifier trained on Kaggle sensor patterns detects the same patterns in MediaPipe landmark data.</p>
+      </details>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <h2>Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Hidden video for camera -->
+<video id="input_video" style="display:none" autoplay muted playsinline></video>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// FEATURE DEFINITIONS
+// These 16 features match exactly what transform_and_train.py extracts from
+// Kaggle sensor data. Both are normalized to [0,1].
+// ─────────────────────────────────────────────────────────────────────────────
+const FEATURE_NAMES = [
+  "acc_mag_mean",   "acc_mag_std",    "acc_mag_max",   "rot_speed_mean",
+  "thm_mean",       "thm_max",
+  "tof1_min_mean",  "tof1_mean_mean",
+  "tof2_min_mean",  "tof2_mean_mean",
+  "tof3_min_mean",  "tof3_mean_mean",
+  "tof4_min_mean",  "tof4_mean_mean",
+  "tof5_min_mean",  "tof5_mean_mean",
+];
+
+const FEATURE_LABELS = {
+  "acc_mag_mean":   "Wrist velocity (mean)",
+  "acc_mag_std":    "Wrist velocity (std)",
+  "acc_mag_max":    "Wrist velocity (max)",
+  "rot_speed_mean": "Palm rotation (mean)",
+  "thm_mean":       "Hand-face overlap (mean)",
+  "thm_max":        "Hand-face overlap (max)",
+  "tof1_min_mean":  "Wrist → Nose (closest)",
+  "tof1_mean_mean": "Wrist → Nose (mean)",
+  "tof2_min_mean":  "Index → Mouth (closest)",
+  "tof2_mean_mean": "Index → Mouth (mean)",
+  "tof3_min_mean":  "Thumb → Cheek (closest)",
+  "tof3_mean_mean": "Thumb → Cheek (mean)",
+  "tof4_min_mean":  "Palm → Forehead (closest)",
+  "tof4_mean_mean": "Palm → Forehead (mean)",
+  "tof5_min_mean":  "Wrist → Chin (closest)",
+  "tof5_mean_mean": "Wrist → Chin (mean)",
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+const WINDOW_SIZE    = 30;   // frames to accumulate before predicting
+const SEND_INTERVAL  = 500;  // ms between server predictions
+
+const frameWindow    = [];   // rolling window of per-frame feature objects
+let prevHandLandmarks = null;
+let lastSendTime      = 0;
+
+let frameCount  = 0;
+let fpsCounter  = 0;
+let lastFpsTime = Date.now();
+
+let totalFrames = 0;
+let bfrbFrames  = 0;
+let bfrbEvents  = 0;
+let lastPred    = 0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+function euclidean(a, b) {
+  return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2);
+}
+
+function arr_mean(arr) { return arr.reduce((s,v)=>s+v,0)/arr.length; }
+function arr_std(arr) {
+  const m = arr_mean(arr);
+  return Math.sqrt(arr.map(v=>(v-m)**2).reduce((s,v)=>s+v,0)/arr.length);
+}
+function arr_max(arr)  { return Math.max(...arr); }
+function arr_min(arr)  { return Math.min(...arr); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEATURE COMPUTATION (per frame)
+// Maps MediaPipe landmarks to Kaggle sensor analog features, all in [0,1]
+// ─────────────────────────────────────────────────────────────────────────────
+function computeFrameFeatures(handLandmarks, faceLandmarks) {
+  if (!handLandmarks) return null;
+
+  const hand = handLandmarks;
+
+  // Key hand landmarks
+  const wrist     = hand[0];
+  const thumbTip  = hand[4];
+  const indexTip  = hand[8];
+  const middleTip = hand[12];
+  const ringTip   = hand[16];
+  const pinkyTip  = hand[20];
+
+  // Palm center (wrist + base knuckles)
+  const palmCenter = {
+    x: (hand[0].x + hand[5].x + hand[9].x + hand[13].x + hand[17].x) / 5,
+    y: (hand[0].y + hand[5].y + hand[9].y + hand[13].y + hand[17].y) / 5,
+    z: (hand[0].z + hand[5].z + hand[9].z + hand[13].z + hand[17].z) / 5,
+  };
+
+  // ── Velocity (acc_mag analog) ──────────────────────────────────────────────
+  // Wrist displacement per frame, normalized by max expected per-frame movement
+  const VEL_MAX = 0.15;  // max expected normalized-coord velocity per frame
+  let velocity = 0;
+  if (prevHandLandmarks) {
+    velocity = Math.min(
+      euclidean(wrist, prevHandLandmarks[0]) / VEL_MAX,
+      1.0
+    );
+  }
+
+  // ── Rotation speed (rot_speed analog) ─────────────────────────────────────
+  // Change in palm orientation vector (index_mcp → pinky_mcp direction)
+  let rotChange = 0;
+  if (prevHandLandmarks) {
+    const curr = { x: hand[17].x - hand[5].x, y: hand[17].y - hand[5].y, z: hand[17].z - hand[5].z };
+    const prev = {
+      x: prevHandLandmarks[17].x - prevHandLandmarks[5].x,
+      y: prevHandLandmarks[17].y - prevHandLandmarks[5].y,
+      z: prevHandLandmarks[17].z - prevHandLandmarks[5].z,
+    };
+    const dot = curr.x*prev.x + curr.y*prev.y + curr.z*prev.z;
+    const mag = Math.sqrt(curr.x**2+curr.y**2+curr.z**2) * Math.sqrt(prev.x**2+prev.y**2+prev.z**2);
+    const angle = mag > 0 ? Math.acos(Math.max(-1, Math.min(1, dot/mag))) : 0;
+    rotChange = Math.min(angle / Math.PI, 1.0);
+  }
+
+  // ── Distances to face (tof analog) ────────────────────────────────────────
+  // Normalized: 0 = touching, 1 = far away (max ~0.8 diagonal in norm coords)
+  const DIST_MAX = 0.8;
+  let wristToNose    = 1.0;
+  let indexToMouth   = 1.0;
+  let thumbToCheek   = 1.0;
+  let palmToForehead = 1.0;
+  let wristToChin    = 1.0;
+  let faceOverlap    = 0.0;
+
+  if (faceLandmarks && faceLandmarks.length > 454) {
+    // MediaPipe Face Mesh key landmarks
+    const noseTip  = faceLandmarks[1];
+    const upperLip = faceLandmarks[13];
+    const leftCheek= faceLandmarks[234];
+    const forehead = faceLandmarks[10];
+    const chin     = faceLandmarks[152];
+
+    wristToNose    = Math.min(euclidean(wrist,     noseTip)  / DIST_MAX, 1.0);
+    indexToMouth   = Math.min(euclidean(indexTip,  upperLip) / DIST_MAX, 1.0);
+    thumbToCheek   = Math.min(euclidean(thumbTip,  leftCheek)/ DIST_MAX, 1.0);
+    palmToForehead = Math.min(euclidean(palmCenter, forehead) / DIST_MAX, 1.0);
+    wristToChin    = Math.min(euclidean(wrist,     chin)     / DIST_MAX, 1.0);
+
+    // Face overlap (thm analog): fraction of fingertips within face region
+    // Use nose tip as face center, check fingertips within 0.18 radius
+    const FACE_RADIUS = 0.18;
+    const fingertips = [thumbTip, indexTip, middleTip, ringTip, pinkyTip];
+    const inFace = fingertips.filter(ft => euclidean(ft, noseTip) < FACE_RADIUS).length;
+    faceOverlap = inFace / 5;
+  }
+
+  return {
+    velocity,
+    rotChange,
+    wristToNose,
+    indexToMouth,
+    thumbToCheek,
+    palmToForehead,
+    wristToChin,
+    faceOverlap,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AGGREGATE WINDOW → 16 Kaggle-equivalent features
+// Each per-frame value is aggregated over WINDOW_SIZE frames
+// ─────────────────────────────────────────────────────────────────────────────
+function aggregateWindow(window) {
+  const vel     = window.map(f => f.velocity);
+  const rot     = window.map(f => f.rotChange);
+  const overlap = window.map(f => f.faceOverlap);
+  const d_nose  = window.map(f => f.wristToNose);
+  const d_mouth = window.map(f => f.indexToMouth);
+  const d_cheek = window.map(f => f.thumbToCheek);
+  const d_fore  = window.map(f => f.palmToForehead);
+  const d_chin  = window.map(f => f.wristToChin);
+
+  return {
+    // Movement (acc_mag analog)
+    acc_mag_mean:    arr_mean(vel),
+    acc_mag_std:     arr_std(vel),
+    acc_mag_max:     arr_max(vel),
+    // Rotation
+    rot_speed_mean:  arr_mean(rot),
+    // Thermal / overlap
+    thm_mean:        arr_mean(overlap),
+    thm_max:         arr_max(overlap),
+    // Proximity to face (tof analog): min over window = closest approach
+    tof1_min_mean:   arr_min(d_nose),    // closest wrist-to-nose
+    tof1_mean_mean:  arr_mean(d_nose),   // mean wrist-to-nose
+    tof2_min_mean:   arr_min(d_mouth),
+    tof2_mean_mean:  arr_mean(d_mouth),
+    tof3_min_mean:   arr_min(d_cheek),
+    tof3_mean_mean:  arr_mean(d_cheek),
+    tof4_min_mean:   arr_min(d_fore),
+    tof4_mean_mean:  arr_mean(d_fore),
+    tof5_min_mean:   arr_min(d_chin),
+    tof5_mean_mean:  arr_mean(d_chin),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEND FEATURES TO FLASK / RECEIVE PREDICTION
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendPrediction(features) {
+  try {
+    const response = await fetch("/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features }),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      addLog("Server error: " + (err.error || response.status), "error");
+      return;
+    }
+    const result = await response.json();
+    updateUI(result, features);
+  } catch (e) {
+    addLog("Network error: " + e.message, "error");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI UPDATES
+// ─────────────────────────────────────────────────────────────────────────────
+function updateUI(result, features) {
+  const isBFRB = result.prediction === 1;
+  const prob   = result.bfrb_probability;
+
+  // Video overlay
+  const overlay = document.getElementById("alert-overlay");
+  const vlabel  = document.getElementById("video-label");
+  overlay.className = "alert-overlay" + (isBFRB ? " bfrb" : "");
+  vlabel.className  = "video-label " + (isBFRB ? "bfrb" : "no-bfrb");
+  vlabel.textContent= result.label;
+
+  // Prediction card
+  const predLabel = document.getElementById("pred-label");
+  predLabel.className   = "pred-label " + (isBFRB ? "bfrb" : "no-bfrb");
+  predLabel.textContent = result.label;
+
+  const confFill = document.getElementById("conf-fill");
+  confFill.style.width = (prob * 100).toFixed(1) + "%";
+  confFill.className   = "confidence-fill" + (isBFRB ? " bfrb" : "");
+  document.getElementById("conf-text").textContent =
+    (prob * 100).toFixed(1) + "%";
+
+  // Session stats
+  totalFrames++;
+  if (isBFRB) {
+    bfrbFrames++;
+    if (lastPred === 0) bfrbEvents++;
+  }
+  lastPred = result.prediction;
+
+  document.getElementById("stat-bfrb").textContent = bfrbEvents;
+  document.getElementById("stat-pct").textContent  =
+    (totalFrames > 0 ? (bfrbFrames / totalFrames * 100).toFixed(0) : 0) + "%";
+
+  // Feature bars
+  updateFeatureBars(features, isBFRB);
+}
+
+let featureBarsInitialized = false;
+function updateFeatureBars(features, isBFRB) {
+  const container = document.getElementById("feature-list");
+  if (!featureBarsInitialized) {
+    container.innerHTML = "";
+    FEATURE_NAMES.forEach(name => {
+      const item = document.createElement("div");
+      item.className = "feature-item";
+      item.innerHTML = `
+        <div class="feature-header">
+          <span>${FEATURE_LABELS[name] || name}</span>
+          <span id="fv-${name}">0.00</span>
+        </div>
+        <div class="feature-bar-bg">
+          <div class="feature-bar-fill" id="fb-${name}" style="width:0%; background:#3b82f6;"></div>
+        </div>`;
+      container.appendChild(item);
+    });
+    featureBarsInitialized = true;
+  }
+
+  FEATURE_NAMES.forEach(name => {
+    const val = features[name] ?? 0;
+    const pct = (Math.min(val, 1.0) * 100).toFixed(1);
+    const vEl = document.getElementById("fv-" + name);
+    const bEl = document.getElementById("fb-" + name);
+    if (vEl) vEl.textContent = val.toFixed(3);
+    if (bEl) {
+      bEl.style.width = pct + "%";
+      // Color proximity features red when close (low value = close to face)
+      const isProximity = name.startsWith("tof");
+      if (isProximity) {
+        const intensity = 1 - val; // 1 = touching, 0 = far
+        bEl.style.background = `hsl(${Math.round(140 - intensity*140)}, 70%, 50%)`;
+      } else {
+        bEl.style.background = isBFRB ? "#ef4444" : "#3b82f6";
+      }
+    }
+  });
+}
+
+function addLog(msg, type = "") {
+  const log = document.getElementById("log");
+  const entry = document.createElement("div");
+  entry.className = "entry" + (type ? " " + type : "");
+  entry.textContent = new Date().toLocaleTimeString() + " – " + msg;
+  log.prepend(entry);
+  while (log.children.length > 20) log.removeChild(log.lastChild);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIAPIPE HOLISTIC SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+const holistic = new Holistic({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+});
+
+holistic.setOptions({
+  modelComplexity:      1,
+  smoothLandmarks:      true,
+  enableSegmentation:   false,
+  refineFaceLandmarks:  false,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence:  0.5,
+});
+
+holistic.onResults(onResults);
+
+const canvas  = document.getElementById("output_canvas");
+const ctx     = canvas.getContext("2d");
+const videoEl = document.getElementById("input_video");
+
+function onResults(results) {
+  // ── Resize canvas to video ────────────────────────────────────────────────
+  canvas.width  = results.image.width;
+  canvas.height = results.image.height;
+
+  // ── Draw camera image ─────────────────────────────────────────────────────
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0);
+
+  // ── Draw face mesh (minimal, just outline) ────────────────────────────────
+  if (results.faceLandmarks) {
+    drawConnectors(ctx, results.faceLandmarks, FACEMESH_FACE_OVAL,
+      { color: "rgba(59,130,246,0.4)", lineWidth: 1 });
+  }
+
+  // ── Draw hands with highlight when BFRB detected ─────────────────────────
+  const handColor = "#10b981";
+  if (results.rightHandLandmarks) {
+    drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS,
+      { color: handColor, lineWidth: 2 });
+    drawLandmarks(ctx, results.rightHandLandmarks,
+      { color: "#fff", fillColor: handColor, lineWidth: 1, radius: 3 });
+  }
+  if (results.leftHandLandmarks) {
+    drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS,
+      { color: handColor, lineWidth: 2 });
+    drawLandmarks(ctx, results.leftHandLandmarks,
+      { color: "#fff", fillColor: handColor, lineWidth: 1, radius: 3 });
+  }
+
+  ctx.restore();
+
+  // ── FPS counter ───────────────────────────────────────────────────────────
+  fpsCounter++;
+  const now = Date.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById("stat-fps").textContent = fpsCounter;
+    fpsCounter  = 0;
+    lastFpsTime = now;
+  }
+
+  // ── Get active hand ───────────────────────────────────────────────────────
+  const handLandmarks = results.rightHandLandmarks || results.leftHandLandmarks || null;
+
+  // ── Compute per-frame features ────────────────────────────────────────────
+  const frameFeats = computeFrameFeatures(handLandmarks, results.faceLandmarks || null);
+
+  if (frameFeats) {
+    frameWindow.push(frameFeats);
+    if (frameWindow.length > WINDOW_SIZE) frameWindow.shift();
+    prevHandLandmarks = handLandmarks;
+  } else {
+    // No hand detected — slowly decay window
+    prevHandLandmarks = null;
+    if (frameWindow.length > 0) frameWindow.shift();
+  }
+
+  // ── Predict when window is full and enough time has passed ────────────────
+  if (frameWindow.length >= WINDOW_SIZE && now - lastSendTime > SEND_INTERVAL) {
+    lastSendTime = now;
+    const features = aggregateWindow(frameWindow);
+    sendPrediction(features);
+  } else if (frameWindow.length < WINDOW_SIZE && !document.getElementById("pred-label").textContent.includes("Waiting")) {
+    document.getElementById("video-label").className = "video-label waiting";
+    document.getElementById("video-label").textContent =
+      `Collecting data... ${frameWindow.length}/${WINDOW_SIZE} frames`;
+  }
+
+  frameCount++;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMERA SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+const camera = new Camera(videoEl, {
+  onFrame: async () => {
+    await holistic.send({ image: videoEl });
+  },
+  width: 1280,
+  height: 720,
+});
+
+camera.start()
+  .then(() => {
+    addLog("Camera started", "good");
+    document.getElementById("video-label").textContent = "Collecting data...";
+    document.getElementById("video-label").className   = "video-label waiting";
+    document.getElementById("status-dot").style.background = "#10b981";
+    document.getElementById("status-dot").style.boxShadow  = "0 0 8px #10b981";
+  })
+  .catch((err) => {
+    addLog("Camera error: " + err.message, "error");
+    document.getElementById("video-label").textContent = "Camera access denied";
+    document.getElementById("status-dot").style.background = "#ef4444";
+  });
+
+// ── Check model status on load ────────────────────────────────────────────────
+fetch("/status")
+  .then(r => r.json())
+  .then(d => {
+    if (d.model_loaded) {
+      addLog(`Model ready (${d.feature_count} features)`, "good");
+    } else {
+      addLog("Model not loaded — run transform_and_train.py first", "error");
+    }
+  })
+  .catch(() => addLog("Could not reach Flask server", "error"));
+</script>
+</body>
+</html>

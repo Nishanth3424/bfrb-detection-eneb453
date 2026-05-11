@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>BFRB System — ERD (3NF)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
+    body { background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 30px 20px; }
+
+    h1 { text-align: center; color: #e94560; font-size: 22px; margin-bottom: 6px; letter-spacing: 1px; }
+    .subtitle { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 30px; }
+
+    /* Grid layout for tables */
+    .erd-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      gap: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* Each "table" box */
+    .table-box {
+      border: 2px solid #334155;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #1e293b;
+    }
+
+    .table-header {
+      background: #16213e;
+      border-bottom: 2px solid #e94560;
+      padding: 10px 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .table-header .table-icon { font-size: 16px; }
+    .table-header .table-name { font-size: 15px; font-weight: bold; color: #f1f5f9; letter-spacing: .5px; }
+    .table-header .pk-label {
+      margin-left: auto; font-size: 10px; background: #e94560;
+      color: #fff; border-radius: 4px; padding: 1px 6px;
+    }
+
+    .table-body { padding: 0; }
+
+    .col-row {
+      display: flex; align-items: center;
+      padding: 7px 14px; border-bottom: 1px solid #1e293b;
+      font-size: 12px; gap: 8px;
+    }
+    .col-row:last-child { border-bottom: none; }
+    .col-row:hover { background: #1a2744; }
+
+    .col-key {
+      width: 22px; text-align: center; font-size: 11px; flex-shrink: 0;
+      font-weight: bold;
+    }
+    .col-key.pk { color: #fbbf24; }  /* gold for PK */
+    .col-key.fk { color: #60a5fa; }  /* blue for FK */
+
+    .col-name { flex: 1; color: #e2e8f0; }
+    .col-name.pk-name { color: #fbbf24; font-weight: bold; }
+    .col-name.fk-name { color: #60a5fa; }
+
+    .col-type { color: #94a3b8; font-size: 11px; }
+
+    .col-constraint {
+      font-size: 10px; background: #0f3460; color: #93c5fd;
+      border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+    }
+    .col-constraint.nn { background: #1c3a1c; color: #86efac; }
+
+    /* Relationship lines section */
+    .relationships {
+      max-width: 1200px; margin: 30px auto 0;
+      background: #1e293b; border: 2px solid #334155; border-radius: 10px; padding: 20px;
+    }
+    .relationships h2 { color: #e94560; font-size: 15px; margin-bottom: 14px; letter-spacing: .5px; }
+    .rel-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 0; border-bottom: 1px solid #334155;
+      font-size: 13px;
+    }
+    .rel-row:last-child { border-bottom: none; }
+    .rel-from { color: #fbbf24; font-weight: bold; min-width: 200px; }
+    .rel-arrow { color: #60a5fa; font-size: 18px; }
+    .rel-to { color: #60a5fa; font-weight: bold; min-width: 200px; }
+    .rel-type { color: #94a3b8; font-size: 11px; }
+
+    /* 3NF explanation */
+    .normalization {
+      max-width: 1200px; margin: 24px auto 0;
+      background: #1e293b; border: 2px solid #334155; border-radius: 10px; padding: 20px;
+    }
+    .normalization h2 { color: #e94560; font-size: 15px; margin-bottom: 14px; letter-spacing: .5px; }
+    .nf-block { margin-bottom: 12px; }
+    .nf-title { color: #fbbf24; font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+    .nf-desc { color: #94a3b8; font-size: 12px; line-height: 1.6; }
+    .nf-check { color: #22c55e; }
+
+    /* Legend */
+    .legend {
+      display: flex; gap: 20px; justify-content: center;
+      margin-top: 24px; font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+
+<h1>BFRB Detection System — Entity Relationship Diagram</h1>
+<div class="subtitle">ENEB453 Final Project &nbsp;|&nbsp; Nishanth S. &nbsp;|&nbsp; Database normalized to 3NF</div>
+
+<!-- ─── TABLE BOXES ─── -->
+<div class="erd-grid">
+
+  <!-- bfrb_types -->
+  <div class="table-box">
+    <div class="table-header">
+      <span class="table-icon">&#127758;</span>
+      <span class="table-name">bfrb_types</span>
+      <span class="pk-label">CATALOG</span>
+    </div>
+    <div class="table-body">
+      <div class="col-row">
+        <span class="col-key pk">PK</span>
+        <span class="col-name pk-name">id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint">AUTO_INCREMENT</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">name</span>
+        <span class="col-type">VARCHAR(100)</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">description</span>
+        <span class="col-type">TEXT</span>
+        <span class="col-constraint">NULLABLE</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">is_custom</span>
+        <span class="col-type">TINYINT(1)</span>
+        <span class="col-constraint nn">DEFAULT 0</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">created_at</span>
+        <span class="col-type">DATETIME</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- bfrb_landmark_rules -->
+  <div class="table-box">
+    <div class="table-header">
+      <span class="table-icon">&#128270;</span>
+      <span class="table-name">bfrb_landmark_rules</span>
+      <span class="pk-label">RULES</span>
+    </div>
+    <div class="table-body">
+      <div class="col-row">
+        <span class="col-key pk">PK</span>
+        <span class="col-name pk-name">id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint">AUTO_INCREMENT</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key fk">FK</span>
+        <span class="col-name fk-name">bfrb_type_id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">hand_landmark_index</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">face_landmark_index</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">distance_threshold_px</span>
+        <span class="col-type">FLOAT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">rule_description</span>
+        <span class="col-type">VARCHAR(255)</span>
+        <span class="col-constraint">NULLABLE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- sessions -->
+  <div class="table-box">
+    <div class="table-header">
+      <span class="table-icon">&#128249;</span>
+      <span class="table-name">sessions</span>
+      <span class="pk-label">SESSION</span>
+    </div>
+    <div class="table-body">
+      <div class="col-row">
+        <span class="col-key pk">PK</span>
+        <span class="col-name pk-name">id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint">AUTO_INCREMENT</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">input_type</span>
+        <span class="col-type">ENUM</span>
+        <span class="col-constraint nn">'webcam','video'</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">video_filename</span>
+        <span class="col-type">VARCHAR(255)</span>
+        <span class="col-constraint">NULLABLE</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">start_time</span>
+        <span class="col-type">DATETIME</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">end_time</span>
+        <span class="col-type">DATETIME</span>
+        <span class="col-constraint">NULLABLE</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">created_at</span>
+        <span class="col-type">DATETIME</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- detections -->
+  <div class="table-box">
+    <div class="table-header">
+      <span class="table-icon">&#9888;</span>
+      <span class="table-name">detections</span>
+      <span class="pk-label">EVENTS</span>
+    </div>
+    <div class="table-body">
+      <div class="col-row">
+        <span class="col-key pk">PK</span>
+        <span class="col-name pk-name">id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint">AUTO_INCREMENT</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key fk">FK</span>
+        <span class="col-name fk-name">session_id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key fk">FK</span>
+        <span class="col-name fk-name">bfrb_type_id</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">frame_number</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">timestamp_ms</span>
+        <span class="col-type">INT</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">confidence_score</span>
+        <span class="col-type">DECIMAL(5,4)</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+      <div class="col-row">
+        <span class="col-key"></span>
+        <span class="col-name">detected_at</span>
+        <span class="col-type">DATETIME</span>
+        <span class="col-constraint nn">NOT NULL</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ─── RELATIONSHIPS ─── -->
+<div class="relationships">
+  <h2>&#128279; Relationships &amp; Foreign Keys</h2>
+
+  <div class="rel-row">
+    <span class="rel-from">bfrb_landmark_rules.bfrb_type_id</span>
+    <span class="rel-arrow">&#8594;</span>
+    <span class="rel-to">bfrb_types.id</span>
+    <span class="rel-type">MANY-TO-ONE &nbsp;|&nbsp; ON DELETE CASCADE</span>
+  </div>
+  <div class="rel-row">
+    <span class="rel-from">detections.session_id</span>
+    <span class="rel-arrow">&#8594;</span>
+    <span class="rel-to">sessions.id</span>
+    <span class="rel-type">MANY-TO-ONE &nbsp;|&nbsp; ON DELETE CASCADE</span>
+  </div>
+  <div class="rel-row">
+    <span class="rel-from">detections.bfrb_type_id</span>
+    <span class="rel-arrow">&#8594;</span>
+    <span class="rel-to">bfrb_types.id</span>
+    <span class="rel-type">MANY-TO-ONE &nbsp;|&nbsp; ON DELETE RESTRICT</span>
+  </div>
+</div>
+
+<!-- ─── 3NF EXPLANATION ─── -->
+<div class="normalization">
+  <h2>&#9989; Normalization to 3rd Normal Form (3NF)</h2>
+
+  <div class="nf-block">
+    <div class="nf-title">1NF — First Normal Form <span class="nf-check">&#10003;</span></div>
+    <div class="nf-desc">
+      All columns hold atomic (indivisible) values. No column contains lists or nested structures.
+      Every row is uniquely identified by its primary key.
+      Detection landmark rules are stored in their own rows in <em>bfrb_landmark_rules</em>
+      rather than as a JSON blob inside <em>bfrb_types</em> — this achieves atomicity.
+    </div>
+  </div>
+
+  <div class="nf-block">
+    <div class="nf-title">2NF — Second Normal Form <span class="nf-check">&#10003;</span></div>
+    <div class="nf-desc">
+      All tables use a single-column integer primary key (id), so there are no composite keys
+      and therefore no partial dependencies possible. Every non-key attribute depends on the
+      whole primary key.
+    </div>
+  </div>
+
+  <div class="nf-block">
+    <div class="nf-title">3NF — Third Normal Form <span class="nf-check">&#10003;</span></div>
+    <div class="nf-desc">
+      No transitive dependencies exist. For example, <em>detections</em> stores
+      <em>bfrb_type_id</em> (not the behavior name directly) — the name is looked up via the
+      FK relationship. This means a behavior name change only needs to happen in one place
+      (bfrb_types.name), not across every detection row. No non-key attribute determines
+      another non-key attribute in any table.
+    </div>
+  </div>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-dot" style="background:#fbbf24;"></div>
+    <span style="color:#fbbf24;">PK — Primary Key</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:#60a5fa;"></div>
+    <span style="color:#60a5fa;">FK — Foreign Key</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:#22c55e;"></div>
+    <span style="color:#22c55e;">NOT NULL constraint</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:#94a3b8;"></div>
+    <span style="color:#94a3b8;">NULLABLE column</span>
+  </div>
+</div>
+
+<div style="text-align:center; color:#334155; font-size:12px; margin-top:20px; padding-bottom:10px;">
+  BFRB Detection System — ENEB453 Final Project — Nishanth S. — University of Maryland
+</div>
+
+</body>
+</html>

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  @page { margin: 1in; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 12pt;
+    line-height: 1.8;
+    color: #000;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+  }
+  .cover {
+    text-align: center;
+    padding-top: 80px;
+    padding-bottom: 60px;
+  }
+  .cover h1 {
+    font-size: 18pt;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  .cover .subtitle {
+    font-size: 13pt;
+    margin-bottom: 40px;
+    font-style: italic;
+  }
+  .cover .meta {
+    font-size: 12pt;
+    line-height: 2;
+  }
+  hr { border: none; border-top: 1px solid #000; margin: 20px 0; }
+  h2 {
+    font-size: 13pt;
+    font-weight: bold;
+    margin-top: 28px;
+    margin-bottom: 8px;
+    text-decoration: underline;
+  }
+  h3 {
+    font-size: 12pt;
+    font-weight: bold;
+    margin-top: 18px;
+    margin-bottom: 6px;
+  }
+  p { margin-bottom: 10px; text-align: justify; }
+  ul, ol { padding-left: 28px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 11pt;
+  }
+  th {
+    background: #e0e0e0;
+    border: 1px solid #000;
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: bold;
+  }
+  td {
+    border: 1px solid #000;
+    padding: 6px 10px;
+    vertical-align: top;
+  }
+  .verdict-box {
+    border: 2px solid #000;
+    padding: 14px 18px;
+    margin: 18px 0;
+    background: #f5f5f5;
+  }
+  .verdict-box strong { font-size: 12pt; }
+  .section { margin-bottom: 22px; }
+  code {
+    font-family: "Courier New", monospace;
+    font-size: 10.5pt;
+    background: #f0f0f0;
+    padding: 1px 4px;
+  }
+  .pre-block {
+    font-family: "Courier New", monospace;
+    font-size: 9.5pt;
+    background: #f5f5f5;
+    border: 1px solid #ccc;
+    padding: 10px 14px;
+    margin: 12px 0;
+    white-space: pre;
+    line-height: 1.5;
+    overflow-x: auto;
+  }
+  .page-break { page-break-before: always; }
+  .footer-note {
+    text-align: center;
+    font-size: 10pt;
+    margin-top: 40px;
+    border-top: 1px solid #000;
+    padding-top: 10px;
+    color: #444;
+  }
+  .fail { color: #c00; font-weight: bold; }
+  .partial { color: #a06000; font-weight: bold; }
+  .pass { color: #006000; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover">
+  <h1>Kaggle CMI Sensor Data: Transformation Assessment</h1>
+  <div class="subtitle">Can the CMI Detect Behavior with Sensor Data Dataset Be Transformed<br/>for MediaPipe Model Training?</div>
+  <hr/>
+  <div class="meta">
+    <strong>Prepared by:</strong> Nishanth Tiglao<br/>
+    <strong>Course:</strong> ENEB453 / ENEB456 — Combined Final Project<br/>
+    <strong>Date:</strong> April 2026<br/>
+    <strong>Institution:</strong> College of Engineering
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ABSTRACT -->
+<div class="section">
+  <h2>Abstract</h2>
+  <p>This report assesses whether the Kaggle Child Mind Institute (CMI) Detect Behavior with Sensor Data dataset can be meaningfully transformed into training data for a MediaPipe-based computer vision BFRB (Body-Focused Repetitive Behavior) detection model. After thorough technical analysis, the conclusion is that the dataset <strong>cannot be meaningfully transformed</strong>. The sensor modalities between the wrist-worn Kaggle device and a webcam-based MediaPipe system are fundamentally incompatible — a physics-level mismatch rather than an engineering limitation.</p>
+</div>
+
+<!-- SECTION 1 -->
+<div class="section">
+  <h2>1. Introduction and Background</h2>
+  <p>The BFRB Detection Web App project (ENEB453) uses a webcam with MediaPipe Holistic to detect body-focused repetitive behaviors in real time. During initial planning, the Kaggle CMI competition dataset was evaluated as a potential training source. This report documents the outcome of that evaluation and explains in technical detail why the two data modalities are incompatible.</p>
+</div>
+
+<!-- SECTION 2 -->
+<div class="section">
+  <h2>2. What the Kaggle CMI Dataset Contains</h2>
+  <p>The CMI Detect Behavior with Sensor Data competition dataset was collected from a custom wrist-worn wearable device called <em>Helios</em>. Subjects wore the bracelet while performing labeled BFRB gestures and control activities. The dataset contains a total of 574,945 rows across 81 subjects and 18 gesture classes, with 341 sensor columns per row.</p>
+
+  <table>
+    <tr><th>Sensor</th><th>Columns</th><th>What It Measures</th><th>Physical Units</th></tr>
+    <tr><td>Accelerometer (3-axis)</td><td>acc_x, acc_y, acc_z</td><td>Linear acceleration of the wrist</td><td>m/s²</td></tr>
+    <tr><td>Rotation (Quaternion)</td><td>rot_w, rot_x, rot_y, rot_z</td><td>3D orientation of wrist/forearm</td><td>Unit quaternion</td></tr>
+    <tr><td>Thermal (5 sensors)</td><td>thm_1 – thm_5</td><td>Skin/proximity temperature at contact point</td><td>°C (27–34 typical)</td></tr>
+    <tr><td>Time-of-Flight (5×64)</td><td>tof_1_v0 – tof_5_v63</td><td>Physical distance from wrist to nearby surfaces</td><td>Millimeters</td></tr>
+  </table>
+</div>
+
+<!-- SECTION 3 -->
+<div class="section">
+  <h2>3. What the MediaPipe System Uses</h2>
+  <p>The BFRB Detection Web App uses a standard webcam with MediaPipe Holistic to extract spatial landmark coordinates from each video frame. The following table summarizes the data available from MediaPipe:</p>
+
+  <table>
+    <tr><th>Landmark Set</th><th>Count</th><th>What It Measures</th><th>Units</th></tr>
+    <tr><td>Hand landmarks</td><td>21 points</td><td>2D positions of hand joints (wrist, knuckles, fingertips)</td><td>Normalized image coordinates (0–1)</td></tr>
+    <tr><td>Face mesh landmarks</td><td>468 points</td><td>2D positions of facial features</td><td>Normalized image coordinates (0–1)</td></tr>
+    <tr><td>Pose landmarks</td><td>33 points</td><td>Body skeleton positions</td><td>Normalized image coordinates (0–1)</td></tr>
+  </table>
+</div>
+
+<!-- SECTION 4 -->
+<div class="section">
+  <h2>4. Why Transformation Is Not Possible: Technical Analysis</h2>
+  <p>For the Kaggle dataset to be used to train the MediaPipe model, each sensor reading would need to be converted into an equivalent MediaPipe landmark feature. The following subsections examine each sensor type and explain why each mapping fails.</p>
+
+  <h3>4.1 Thermal Sensors — No Camera Equivalent</h3>
+  <p>The Kaggle device includes 5 thermal sensors that measure actual skin temperature at the point of contact. When a hand touches the face, thermal readings rise from approximately 28°C to 33°C. Feature importance analysis of the Kaggle model confirms that thermal readings account for approximately 27% of total model importance — making them the single most informative sensor group.</p>
+  <p>A webcam captures visible light, not infrared radiation or thermal energy. There is no proxy, approximation, or workaround for this missing signal. This represents a complete loss of the dataset's most discriminative feature class.</p>
+
+  <h3>4.2 Time-of-Flight Sensors — Different Physical Basis</h3>
+  <p>The five ToF sensors emit infrared light and measure the physical distance in millimeters from the wrist to nearby surfaces, providing a 5×64 spatial depth grid. This accounts for approximately 45% of model importance.</p>
+  <p>MediaPipe provides hand-to-face distances in normalized 2D image coordinates (0–1), which differ from physical millimeter measurements in several fundamental ways:</p>
+  <ul>
+    <li>Distances are affected by camera position (user proximity changes pixel ratios)</li>
+    <li>The relationship between normalized coordinates and physical millimeters is non-linear and varies with camera focal length, lens distortion, and user position</li>
+    <li>Depth information is unreliable in MediaPipe's z-axis estimation</li>
+    <li>Only 7 landmark distance pairs are available versus 320 ToF values — a 97.8% reduction in information</li>
+  </ul>
+
+  <h3>4.3 Accelerometer — Incompatible Scale</h3>
+  <p>Wrist velocity can be approximated from MediaPipe by tracking the hand landmark frame-to-frame. However, the Kaggle dataset measures actual acceleration in g-force (an inertial measurement), while MediaPipe provides pixel displacement per frame (a visual measurement). A model trained on physical acceleration values cannot apply those learned decision boundaries to pixel-space velocity values. The relationship between the two is non-linear and varies with camera setup.</p>
+
+  <h3>4.4 Quaternion Rotation — Different Reference Frames</h3>
+  <p>Quaternions represent 3D wrist orientation relative to gravity, measured by a gyroscope. Palm orientation can be estimated from MediaPipe hand landmarks, but the reference frames are completely different: the IMU uses a world gravity frame while MediaPipe uses a 2D camera image frame. The values are qualitatively similar but quantitatively incompatible.</p>
+</div>
+
+<!-- SECTION 5 -->
+<div class="section">
+  <h2>5. Version 1 Transformation Attempt and Results</h2>
+  <p>A cross-domain feature transformation was implemented and tested as the first approach. Sixteen features were engineered to bridge the Kaggle and MediaPipe domains:</p>
+
+  <div class="pre-block">Kaggle Sensor           →  Engineered Feature          →  MediaPipe Proxy
+────────────────────────────────────────────────────────────────────────
+Accelerometer (3-axis)  →  acc_mag_mean/std/max         →  Wrist velocity from hand[0] Δ
+Quaternion (4-axis)     →  rot_speed_mean               →  Palm direction vector
+Thermal (5 sensors)     →  thm_mean, thm_max            →  Hand-face overlap fraction
+ToF grid 1 (64 values)  →  tof1_min_mean, tof1_mean     →  Wrist-to-nose distance
+ToF grid 2 (64 values)  →  tof2_min_mean, tof2_mean     →  Index-to-mouth distance
+ToF grid 3 (64 values)  →  tof3_min_mean, tof3_mean     →  Thumb-to-cheek distance
+ToF grid 4 (64 values)  →  tof4_min_mean, tof4_mean     →  Palm-to-forehead distance
+ToF grid 5 (64 values)  →  tof5_min_mean, tof5_mean     →  Wrist-to-chin distance</div>
+
+  <p><strong>Training results on the Kaggle test set:</strong></p>
+  <ul>
+    <li>Accuracy: 77%</li>
+    <li>AUC-ROC: 0.837</li>
+    <li>Top feature importances: thermal readings (27%), ToF grids (45%), accelerometer (20%)</li>
+  </ul>
+
+  <p><strong>Why the model failed on real webcam data:</strong></p>
+  <ol>
+    <li>The model learned that thermal signal rise indicates BFRB contact. The webcam has no thermal signal.</li>
+    <li>The model learned ToF distance patterns in millimeters. MediaPipe distances are in 0–1 normalized pixel ratios.</li>
+    <li>MinMax normalization does not resolve this — it normalizes within each domain, but the decision boundaries that separate BFRB from non-BFRB are defined in the source sensor domain's physical scale.</li>
+    <li>This constitutes a zero-shot cross-domain transfer: the model never observed a single MediaPipe feature during training.</li>
+  </ol>
+</div>
+
+<!-- SECTION 6 -->
+<div class="section">
+  <h2>6. Feature Compatibility Matrix</h2>
+  <table>
+    <tr><th>Kaggle Feature</th><th>Importance</th><th>MediaPipe Equivalent</th><th>Transferable?</th></tr>
+    <tr><td>Thermal (thm_mean, thm_max)</td><td>27%</td><td>None — cameras cannot measure temperature</td><td class="fail">NO</td></tr>
+    <tr><td>ToF 1–5 (10 features)</td><td>45%</td><td>Pixel distances (different scale, reference, and resolution)</td><td class="fail">NO</td></tr>
+    <tr><td>Accelerometer (3 features)</td><td>20%</td><td>Pixel velocity (conceptually similar, numerically incompatible)</td><td class="partial">PARTIAL</td></tr>
+    <tr><td>Rotation (1 feature)</td><td>8%</td><td>Palm direction (different reference frame)</td><td class="partial">PARTIAL</td></tr>
+  </table>
+  <p>In total, 72% of model importance relies on features with no valid MediaPipe equivalent.</p>
+</div>
+
+<!-- SECTION 7 -->
+<div class="section">
+  <h2>7. Why Creative Workarounds Also Fail</h2>
+
+  <h3>7.1 Scaling ToF mm to Pixel Ratios</h3>
+  <p>The relationship between physical distance and pixel distance depends on camera focal length, sensor size, user distance from camera, and lens distortion. These parameters vary per user and per session, making a single universal scaling function impossible.</p>
+
+  <h3>7.2 Using Labels Without Features</h3>
+  <p>The Kaggle dataset does contain labeled BFRB gestures. Using that label knowledge to inform rule design is valid — and is exactly what the v3 rule-based engine does. However, using labels without features is not "transforming the data for model training."</p>
+
+  <h3>7.3 Temporal Pattern Learning</h3>
+  <p>BFRB temporal patterns such as dwell duration and frequency are already encoded in the rule-based engine's timers. The Kaggle data provides no new information beyond what is available from published clinical BFRB literature.</p>
+
+  <h3>7.4 Domain Adaptation Techniques</h3>
+  <p>Domain adaptation methods such as DANN or CycleGAN require paired samples from both domains or at minimum features in the same dimensionality and modality. Wearable sensor data and camera landmark data have no structural correspondence that can be aligned.</p>
+</div>
+
+<!-- SECTION 8 -->
+<div class="section">
+  <h2>8. Chosen Alternative: Rule-Based Engine on MediaPipe Landmarks</h2>
+  <p>Rather than forcing an incompatible cross-domain transfer, the project implemented a detection engine that operates natively on MediaPipe landmarks. This approach includes:</p>
+  <ul>
+    <li>A 4-state machine (IDLE → PROXIMITY → DWELL → BFRB) using face-width-normalized Euclidean distances</li>
+    <li>A pinch-pull engine for detecting hair pulling and skin picking via 2-finger pinch and pull-away velocity</li>
+    <li>v3 additions: mouth aperture filtering, extended finger count, micro-motion jitter analysis, palm orientation, dual-signal confidence scoring, and negative detectors for eating and resting behaviors</li>
+  </ul>
+  <p>This approach eliminates the domain gap entirely and achieves real-time detection at 30 fps with significantly fewer false positives than the cross-domain model approach.</p>
+</div>
+
+<!-- SECTION 9 / CONCLUSION -->
+<div class="section">
+  <h2>9. Conclusion</h2>
+  <p>The Kaggle CMI dataset is valuable for understanding BFRB behaviors and validating that wearable-based detection is feasible. However, the data was collected from physical sensors — accelerometer, gyroscope, thermal, and time-of-flight — that measure fundamentally different quantities than what a webcam and MediaPipe system can observe.</p>
+  <p>The three critical blockers that make transformation impossible are:</p>
+  <ol>
+    <li><strong>Thermal data has no camera equivalent.</strong> Seventy-two percent of the model's top features depend on sensors that do not exist in a webcam-based system.</li>
+    <li><strong>Physical units cannot be mapped to normalized pixel coordinates</strong> without per-user camera calibration data that is unavailable at runtime.</li>
+    <li><strong>Zero-shot cross-domain transfer requires structural feature alignment</strong> that does not exist between wearable sensor data and camera landmark data.</li>
+  </ol>
+  <p>The correct engineering decision — which has been implemented — is to use MediaPipe's native landmark data directly with rule-based heuristics, leveraging behavioral knowledge from BFRB research without attempting to force incompatible sensor data through a machine learning model.</p>
+</div>
+
+<div class="footer-note">
+  ENEB453 / ENEB456 Combined Final Project &nbsp;&bull;&nbsp; Nishanth Tiglao &nbsp;&bull;&nbsp; April 2026<br/>
+  BFRB Detection System — Kaggle Data Transformation Assessment
+</div>
+
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "BFRB Detection System",
+  "short_name": "BFRB",
+  "description": "Real-time webcam-based detection of body-focused repetitive behaviors. Built for the ENEB453/456 final project.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f0f4f8",
+  "theme_color": "#1a3a5c",
+  "categories": ["health", "medical", "research"],
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

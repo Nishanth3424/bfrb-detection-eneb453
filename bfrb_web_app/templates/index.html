@@ -1,0 +1,3391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BFRB Detection System</title>
+
+  <!-- PWA (Tier 4 / 4.6) -->
+  <link rel="manifest" href="/static/manifest.json"/>
+  <meta name="theme-color" content="#1a3a5c"/>
+  <link rel="icon" sizes="192x192" href="/static/icon-192.png"/>
+  <link rel="apple-touch-icon" href="/static/icon-192.png"/>
+
+  <!-- MediaPipe Holistic -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+
+  <!-- Chart.js for HUD -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Socket.IO for real-time predictions (Tier 3 / 5.2) -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f0f4f8;
+      --surface: #ffffff;
+      --surface2: #e8edf3;
+      --border: #c9d3df;
+      --text: #1a2332;
+      --text-dim: #5a6a7e;
+      --accent: #1a3a5c;
+      --accent-glow: rgba(26, 58, 92, 0.12);
+      --danger: #d9534f;
+      --danger-glow: rgba(217,83,79,.15);
+      --success: #2e8b57;
+      --warning: #d4880f;
+      --info: #2a6cb6;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── NOTIFICATION OVERLAY (global alert) ── */
+    #notification-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(6px);
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 80px;
+      animation: fadeIn .25s ease;
+    }
+    #notification-overlay.show { display: flex; }
+    @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+    @keyframes slideDown { from { transform:translateY(-40px);opacity:0 } to { transform:translateY(0);opacity:1 } }
+    @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 var(--danger-glow) } 70% { box-shadow: 0 0 0 20px transparent } 100% { box-shadow: 0 0 0 0 transparent } }
+
+    .notif-card {
+      background: var(--surface);
+      border: 2px solid var(--danger);
+      border-radius: 16px;
+      padding: 32px 40px;
+      max-width: 460px;
+      width: 90%;
+      text-align: center;
+      animation: slideDown .35s ease;
+      box-shadow: 0 20px 60px rgba(0,0,0,.15), 0 0 40px var(--danger-glow);
+    }
+    .notif-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: var(--danger-glow);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 28px;
+      animation: pulse-ring 2s infinite;
+    }
+    .notif-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .notif-type { color: var(--danger); font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .notif-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; }
+    .notif-question { font-size: 15px; margin-bottom: 16px; color: var(--text-dim); }
+    .notif-buttons { display: flex; gap: 12px; justify-content: center; }
+    .notif-btn {
+      border: none; border-radius: 10px; padding: 12px 32px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .notif-btn:hover { transform: translateY(-2px); }
+    .notif-btn:active { transform: translateY(0); }
+    .notif-btn-yes {
+      background: var(--success); color: #fff;
+      box-shadow: 0 4px 14px rgba(34,197,94,.3);
+    }
+    .notif-btn-no {
+      background: var(--danger); color: #fff;
+      box-shadow: 0 4px 14px rgba(239,68,68,.3);
+    }
+    .notif-dismiss {
+      margin-top: 14px;
+      background: none; border: none; color: var(--text-dim);
+      font-size: 12px; cursor: pointer; text-decoration: underline;
+    }
+
+    /* ── TOAST NOTIFICATIONS ── */
+    #toast-container {
+      position: fixed; top: 16px; right: 16px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    }
+    .toast {
+      background: var(--surface2); border-left: 4px solid var(--accent);
+      padding: 12px 18px; border-radius: 8px; font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3);
+      animation: slideIn .3s ease; pointer-events: auto;
+      max-width: 340px;
+    }
+    .toast.success { border-left-color: var(--success); }
+    .toast.warning { border-left-color: var(--warning); }
+    .toast.error   { border-left-color: var(--danger); }
+    @keyframes slideIn { from { transform:translateX(100%);opacity:0 } to { transform:translateX(0);opacity:1 } }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+    }
+    .logo { color: var(--accent); font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+    .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%,100% { opacity:1;transform:scale(1) } 50% { opacity:.5;transform:scale(.8) } }
+    .nav-tabs { display: flex; gap: 4px; }
+    .nav-tab {
+      background: none; border: none; color: var(--text-dim);
+      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+    }
+    .nav-tab:hover { background: var(--surface2); color: var(--text); }
+    .nav-tab.active { background: var(--accent); color: #fff; }
+    .session-pill {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--text-dim);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .session-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .session-dot.live { background: var(--success); animation: pulse-dot 1.5s infinite; }
+    .session-dot.off { background: var(--text-dim); }
+
+    /* ── PAGE VIEWS ── */
+    .page-view { display: none; }
+    .page-view.active { display: block; }
+
+    /* ── DASHBOARD PAGE ── */
+
+    /* Stats Row */
+    .stats-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 16px 20px 0; }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      text-align: center;
+    }
+    .stat-value { font-size: 26px; font-weight: 800; color: var(--text); line-height: 1.2; }
+    .stat-value.danger { color: var(--danger); }
+    .stat-value.success { color: var(--success); }
+    .stat-value.warning { color: var(--warning); }
+    .stat-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+    /* Main Grid */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+      padding: 16px 20px;
+      min-height: calc(100vh - 180px);
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .card-head {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13px; font-weight: 700;
+    }
+    .card-head .badge {
+      font-size: 10px; padding: 3px 10px; border-radius: 10px;
+      font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+    }
+    .badge-live { background: var(--danger); color: #fff; animation: pulse-dot 2s infinite; }
+    .badge-info { background: var(--accent); color: #fff; }
+    .badge-success { background: var(--success); color: #fff; }
+    .card-body { padding: 14px 16px; }
+
+    /* ── VIDEO PANEL ── */
+    .video-container { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; }
+    #input_video { display: none; }
+    #output_canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+    .border-flash {
+      position: absolute; inset: 0;
+      border: 3px solid transparent;
+      pointer-events: none; transition: all .2s;
+      border-radius: 8px;
+    }
+    .border-flash.bfrb { border-color: var(--danger); background: rgba(239,68,68,.06); box-shadow: inset 0 0 30px var(--danger-glow); }
+    .border-flash.suspicious { border-color: var(--warning); background: rgba(245,158,11,.04); }
+
+    .state-badge {
+      position: absolute; top: 12px; left: 12px;
+      padding: 6px 16px; border-radius: 8px;
+      font-size: 12px; font-weight: 700;
+      pointer-events: none; transition: all .25s;
+      backdrop-filter: blur(8px);
+    }
+    .state-badge.idle      { background: rgba(26,58,92,.65); color: #fff; }
+    .state-badge.proximity { background: rgba(212,136,15,.8); color: #fff; }
+    .state-badge.dwell     { background: rgba(206,100,12,.8); color: #fff; }
+    .state-badge.bfrb      { background: rgba(217,83,79,.9); color: #fff; }
+    .state-badge.nohand    { background: rgba(90,106,126,.6); color: #fff; }
+    .state-badge.eating    { background: rgba(46,139,87,.75); color: #fff; }
+    .state-badge.resting   { background: rgba(26,58,92,.7); color: #fff; }
+
+    .dwell-bar-wrap {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      width: 220px; pointer-events: none; opacity: 0; transition: opacity .3s;
+    }
+    .dwell-bar-wrap.visible { opacity: 1; }
+    .dwell-lbl { text-align: center; font-size: 11px; color: #fff; margin-bottom: 4px; text-shadow: 0 1px 4px #000; }
+    .dwell-track { height: 5px; background: rgba(255,255,255,.15); border-radius: 3px; overflow: hidden; }
+    .dwell-fill { height: 100%; border-radius: 3px; transition: width .1s linear; }
+
+    .bfrb-overlay-type {
+      position: absolute; bottom: 42px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; color: #fca5a5; background: rgba(0,0,0,.6);
+      padding: 4px 14px; border-radius: 10px; pointer-events: none;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+    }
+    .bfrb-overlay-type.visible { opacity: 1; }
+
+    /* Controls */
+    .controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      border: none; border-radius: 8px; padding: 9px 20px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: all .2s; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-secondary{ background: var(--surface2); color: var(--text); border:1px solid var(--border); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-ghost   { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+
+    /* ── BFRB SELECTOR ── */
+    .selector-panel {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; margin-top: 14px;
+    }
+    .selector-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    .selector-title { font-size: 13px; font-weight: 700; }
+    .mode-toggle {
+      display: flex; background: var(--bg); border-radius: 8px; overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .mode-btn {
+      border: none; padding: 5px 14px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+      background: transparent; color: var(--text-dim);
+    }
+    .mode-btn.active { background: var(--accent); color: #fff; }
+
+    .bfrb-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .bfrb-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 8px;
+      background: var(--bg); border: 1px solid var(--border);
+      cursor: pointer; transition: all .15s; font-size: 12px;
+    }
+    .bfrb-option:hover { border-color: var(--accent); }
+    .bfrb-option.selected { border-color: var(--accent); background: var(--accent-glow); }
+    .bfrb-option input { display: none; }
+    .bfrb-check {
+      width: 16px; height: 16px; border-radius: 4px;
+      border: 2px solid var(--border); flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s; font-size: 10px; color: #fff;
+    }
+    .bfrb-option.selected .bfrb-check { background: var(--accent); border-color: var(--accent); }
+    .bfrb-option .bfrb-name { font-weight: 600; }
+    .bfrb-option .bfrb-cat { font-size: 10px; color: var(--text-dim); }
+
+    /* ── RIGHT SIDEBAR ── */
+    .sidebar { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: calc(100vh - 180px); }
+
+    /* Detection Status */
+    .detection-status { text-align: center; padding: 8px 0; }
+    .pred-label { font-size: 22px; font-weight: 800; transition: color .3s; }
+    .pred-label.bfrb { color: var(--danger); }
+    .pred-label.no-bfrb { color: var(--success); }
+    .pred-label.waiting { color: var(--text-dim); font-size: 16px; }
+    .type-label { color: var(--warning); font-size: 14px; font-weight: 600; margin-top: 4px; min-height: 20px; }
+
+    .conf-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin: 12px 0 6px; }
+    .conf-track { background: var(--bg); border-radius: 4px; height: 6px; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 4px; transition: width .3s, background .3s; }
+    .conf-fill.high { background: var(--danger); }
+    .conf-fill.med  { background: var(--warning); }
+    .conf-fill.low  { background: var(--success); }
+
+    /* Signal Grid */
+    .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+    .signal {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; font-size: 11px;
+    }
+    .signal .s-label { color: var(--text-dim); margin-bottom: 3px; }
+    .signal .s-value { font-weight: 700; font-size: 13px; }
+    .signal .s-value.active { color: var(--danger); }
+    .signal .s-value.ok { color: var(--success); }
+
+    /* Distance Bars */
+    .dist-item { margin-bottom: 6px; }
+    .dist-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+    .dist-track { height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+    .dist-fill { height: 100%; border-radius: 2px; transition: width .15s; }
+
+    /* State History */
+    .state-dots { display: flex; gap: 3px; }
+    .sdot { flex: 1; height: 6px; border-radius: 3px; background: var(--surface2); transition: background .2s; }
+    .sdot.idle      { background: #64748b; }
+    .sdot.proximity { background: var(--warning); }
+    .sdot.dwell     { background: #ea580c; }
+    .sdot.bfrb      { background: var(--danger); }
+    .sdot.pinch     { background: #7c3aed; }
+
+    /* Detection Log */
+    .det-log { max-height: 180px; overflow-y: auto; }
+    .det-entry {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .det-entry:last-child { border-bottom: none; }
+    .det-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .det-dot.high { background: var(--danger); }
+    .det-dot.med { background: var(--warning); }
+    .det-body { flex: 1; }
+    .det-name { font-size: 12px; font-weight: 600; }
+    .det-time { font-size: 10px; color: var(--text-dim); }
+    .det-conf { font-size: 12px; font-weight: 700; }
+
+    /* ── HUD PAGE ── */
+    .hud-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 16px 20px;
+    }
+    .hud-grid .card { min-height: 200px; }
+    .chart-container { position: relative; height: 220px; padding: 8px; }
+    .hud-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 16px 20px 0; }
+
+    /* Session History Table */
+    .session-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .session-table th {
+      text-align: left; padding: 10px 12px;
+      background: var(--bg); color: var(--text-dim);
+      font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    }
+    .session-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .session-table tr:hover td { background: var(--surface2); }
+    .pill { display: inline-block; border-radius: 10px; padding: 2px 10px; font-size: 11px; font-weight: 600; }
+    .pill-live { background: rgba(239,68,68,.15); color: var(--danger); }
+    .pill-done { background: rgba(34,197,94,.15); color: var(--success); }
+
+    /* ── FOOTER ── */
+    footer {
+      text-align: center; color: var(--text-dim); font-size: 11px;
+      padding: 14px; border-top: 1px solid var(--border);
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .stats-row { grid-template-columns: repeat(3, 1fr); }
+      .main-grid { grid-template-columns: 1fr; }
+      .hud-grid { grid-template-columns: 1fr; }
+      .sidebar { max-height: none; }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface2); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* How it works */
+    details summary { cursor:pointer; font-size:12px; color:var(--accent); user-select:none; margin-bottom:6px; }
+    details p, details li { font-size:11px; color:var(--text-dim); line-height:1.6; margin-bottom:3px; }
+    details ul { padding-left:14px; }
+
+    /* Onboarding overlay */
+    #onboarding-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 10002;
+      background: rgba(0,0,0,.5);
+      backdrop-filter: blur(8px);
+      align-items: center; justify-content: center;
+      animation: fadeIn .3s ease;
+    }
+    #onboarding-overlay.show { display: flex; }
+    .onboarding-card {
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      padding: 32px 36px;
+      max-width: 560px; width: 92%;
+      max-height: 85vh; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,.2), 0 0 40px var(--accent-glow);
+    }
+    .onboarding-title {
+      font-size: 22px; font-weight: 800; color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .onboarding-sub {
+      font-size: 14px; color: var(--text-dim); margin-bottom: 24px;
+    }
+    .ob-question {
+      margin-bottom: 20px;
+    }
+    .ob-question label {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      display: block; margin-bottom: 8px;
+    }
+    .ob-question input, .ob-question select, .ob-question textarea {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit; color: var(--text);
+      background: var(--bg);
+    }
+    .ob-question input:focus, .ob-question select:focus, .ob-question textarea:focus {
+      outline: 2px solid var(--accent-glow); border-color: var(--accent);
+    }
+    .ob-question textarea { resize: vertical; min-height: 70px; }
+    .ob-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ob-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 20px;
+      background: var(--surface2); border: 1px solid var(--border);
+      font-size: 13px; cursor: pointer; transition: all .15s;
+      user-select: none;
+    }
+    .ob-chip.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .ob-chip input { display: none; }
+    .ob-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+    /* Calibration overlay (Tier 2 / 2.3) */
+    #calib-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 10001;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(6px);
+      align-items: center; justify-content: center;
+      animation: fadeIn .25s ease;
+    }
+    #calib-overlay.show { display: flex; }
+    .calib-card {
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      padding: 28px 36px; max-width: 520px; width: 90%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 40px var(--accent-glow);
+    }
+    .calib-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; color: var(--accent); }
+    .calib-message { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .calib-sub { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; }
+    .calib-counter { font-size: 44px; font-weight: 800; color: var(--accent); margin: 12px 0; }
+    .calib-skip {
+      margin-top: 16px; background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 12px; text-decoration: underline;
+    }
+
+    /* Pilot study modal (Tier 3 / 6.3) */
+    #pilot-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 10001;
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(6px);
+      align-items: center; justify-content: center;
+      animation: fadeIn .25s ease;
+    }
+    #pilot-overlay.show { display: flex; }
+    .pilot-card {
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      padding: 28px 36px; max-width: 520px; width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 40px var(--accent-glow);
+    }
+    .pilot-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; color: var(--accent); }
+    .pilot-sub { font-size: 13px; color: var(--text-dim); margin-bottom: 18px; }
+    .pilot-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 12px; font-size: 13px;
+    }
+    .pilot-row span { color: var(--text-dim); flex: 1; }
+    .pilot-row input, .pilot-row select {
+      flex: 1.2; min-width: 0;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit;
+    }
+    .pilot-row input:focus, .pilot-row select:focus {
+      outline: 2px solid var(--accent-glow); border-color: var(--accent);
+    }
+    .pilot-counter { font-size: 56px; font-weight: 800; color: var(--accent); text-align: center; margin: 12px 0; }
+    .pilot-detect-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; background: var(--surface2);
+      border-radius: 10px; margin-bottom: 16px;
+    }
+    .pilot-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+
+    /* Bouts list (Tier 3 / 4.1) */
+    .bout-row {
+      display: grid; grid-template-columns: 1fr auto auto auto;
+      align-items: center; gap: 10px;
+      padding: 10px 12px; background: var(--surface2);
+      border-radius: 8px; margin-bottom: 6px; font-size: 12px;
+    }
+    .bout-type { font-weight: 600; color: var(--text); }
+    .bout-meta { color: var(--text-dim); font-family: 'Consolas', monospace; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════ NOTIFICATION OVERLAY ═══════════════════ -->
+<div id="notification-overlay">
+  <div class="notif-card">
+    <div class="notif-icon" id="notif-icon">&#9888;</div>
+    <div class="notif-title">BFRB Behavior Detected</div>
+    <div class="notif-type" id="notif-bfrb-type">Hair Pulling</div>
+    <div class="notif-sub" id="notif-sub">Detected with 92% confidence</div>
+    <div class="notif-question">Was this detection accurate?</div>
+    <div class="notif-buttons">
+      <button class="notif-btn notif-btn-yes" onclick="submitNotifFeedback(true)">Yes, correct</button>
+      <button class="notif-btn notif-btn-no" onclick="submitNotifFeedback(false)">No, false alarm</button>
+    </div>
+    <button class="notif-dismiss" onclick="dismissNotif()">Dismiss without feedback</button>
+  </div>
+</div>
+
+<!-- ═══════════════════ CALIBRATION OVERLAY (Tier 2 / 2.3) ═══════════════════ -->
+<div id="calib-overlay">
+  <div class="calib-card">
+    <div class="calib-title">Adaptive Threshold Calibration</div>
+    <div class="calib-message" id="calib-message">Get ready...</div>
+    <div class="calib-sub" id="calib-sub">Make sure your hand and face are visible to the camera.</div>
+    <div class="calib-counter" id="calib-counter">3</div>
+    <button class="calib-skip" onclick="document.getElementById('calib-overlay').classList.remove('show'); Calibration.active=false;">Skip calibration</button>
+  </div>
+</div>
+
+<!-- ═══════════════════ PILOT STUDY MODAL (Tier 3 / 6.3) ═══════════════════ -->
+<div id="pilot-overlay">
+  <div class="pilot-card">
+    <div class="pilot-step" id="pilot-step-setup">
+      <div class="pilot-title">Pilot Study Trial</div>
+      <div class="pilot-sub">Structured ground-truth collection for IEEE evaluation.</div>
+      <label class="pilot-row">
+        <span>Participant ID</span>
+        <input type="text" id="pilot-participant" placeholder="P01" />
+      </label>
+      <label class="pilot-row">
+        <span>Target Gesture</span>
+        <select id="pilot-gesture">
+          <option>Hair Pulling</option>
+          <option>Nail Biting</option>
+          <option>Skin Picking</option>
+          <option>Nose Picking</option>
+          <option>Lip Picking</option>
+          <option>Cheek Touching</option>
+          <option>Forehead Touching</option>
+          <option>Face Touching</option>
+        </select>
+      </label>
+      <label class="pilot-row">
+        <span>Expected Count</span>
+        <input type="number" id="pilot-expected" min="0" value="5"/>
+      </label>
+      <label class="pilot-row">
+        <span>Duration (sec)</span>
+        <input type="number" id="pilot-duration" min="5" max="600" value="30"/>
+      </label>
+      <div class="pilot-buttons">
+        <button class="btn btn-secondary" onclick="closePilotModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="PilotStudy.start()">Start Trial</button>
+      </div>
+    </div>
+
+    <div class="pilot-step" id="pilot-step-running" style="display:none;">
+      <div class="pilot-title" id="pilot-running-title">Trial Running</div>
+      <div class="pilot-sub" id="pilot-running-sub">Perform the target gesture naturally.</div>
+      <div class="pilot-counter" id="pilot-counter">30</div>
+      <div class="pilot-detect-row">
+        <span>Auto-detected</span>
+        <span id="pilot-detected-count" style="font-size:24px;font-weight:700;color:var(--accent);">0</span>
+      </div>
+      <div class="pilot-buttons">
+        <button class="btn btn-danger" onclick="PilotStudy.stop()">Stop Early</button>
+      </div>
+    </div>
+
+    <div class="pilot-step" id="pilot-step-review" style="display:none;">
+      <div class="pilot-title">Trial Complete - Verify Results</div>
+      <div class="pilot-sub">How many <em id="pilot-review-target">--</em> events <strong>actually occurred</strong>?</div>
+      <label class="pilot-row">
+        <span>Auto-detected (from system)</span>
+        <input type="number" id="pilot-actual-detected" min="0" readonly/>
+      </label>
+      <label class="pilot-row">
+        <span>True Positives</span>
+        <input type="number" id="pilot-tp" min="0" value="0"/>
+      </label>
+      <label class="pilot-row">
+        <span>False Positives</span>
+        <input type="number" id="pilot-fp" min="0" value="0"/>
+      </label>
+      <label class="pilot-row">
+        <span>False Negatives (missed)</span>
+        <input type="number" id="pilot-fn" min="0" value="0"/>
+      </label>
+      <label class="pilot-row">
+        <span>Notes</span>
+        <input type="text" id="pilot-notes" placeholder="Anything noteworthy about this trial"/>
+      </label>
+      <div class="pilot-buttons">
+        <button class="btn btn-secondary" onclick="closePilotModal()">Discard</button>
+        <button class="btn btn-primary" onclick="PilotStudy.submitReview()">Save Trial</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ONBOARDING OVERLAY ═══════════════════ -->
+<div id="onboarding-overlay">
+  <div class="onboarding-card">
+    <div class="onboarding-title">Welcome! Let's Set Up Your Profile</div>
+    <div class="onboarding-sub">Answer a few questions so we can personalize your BFRB detection experience.</div>
+
+    <div class="ob-question">
+      <label>Which BFRBs do you experience? (select all that apply)</label>
+      <div class="ob-checkboxes" id="ob-bfrbs">
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Hair Pulling"/>Hair Pulling</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Nail Biting"/>Nail Biting</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Skin Picking"/>Skin Picking</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Nose Picking"/>Nose Picking</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Lip Picking"/>Lip Picking</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Face Touching"/>Face Touching</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Forehead Touching"/>Forehead Touching</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Cheek Touching"/>Cheek Touching</label>
+      </div>
+    </div>
+
+    <div class="ob-question">
+      <label>How often do these behaviors occur?</label>
+      <select id="ob-frequency">
+        <option value="">Select frequency...</option>
+        <option value="rarely">Rarely (a few times a month)</option>
+        <option value="sometimes">Sometimes (a few times a week)</option>
+        <option value="often">Often (daily)</option>
+        <option value="very_often">Very Often (multiple times a day)</option>
+        <option value="constant">Almost constantly</option>
+      </select>
+    </div>
+
+    <div class="ob-question">
+      <label>What triggers your BFRBs? (select all that apply)</label>
+      <div class="ob-checkboxes" id="ob-triggers">
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="stress"/>Stress</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="boredom"/>Boredom</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="anxiety"/>Anxiety</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="focus"/>Deep Focus/Concentration</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="tired"/>Tiredness</label>
+        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="unknown"/>Not sure</label>
+      </div>
+    </div>
+
+    <div class="ob-question">
+      <label>What is your primary goal with this tool?</label>
+      <select id="ob-goal">
+        <option value="">Select goal...</option>
+        <option value="awareness">Increase awareness of my behaviors</option>
+        <option value="reduce">Reduce frequency of behaviors</option>
+        <option value="track">Track and monitor patterns over time</option>
+        <option value="research">Research / academic purposes</option>
+        <option value="clinical">Clinical / therapy support</option>
+      </select>
+    </div>
+
+    <div class="ob-question">
+      <label>Would you like audio/visual alerts when a BFRB is detected?</label>
+      <select id="ob-alerts">
+        <option value="visual_only">Visual alerts only (screen flash)</option>
+        <option value="visual_sound">Visual + sound alerts</option>
+        <option value="gentle">Gentle notifications (non-intrusive)</option>
+        <option value="none">No alerts (silent tracking only)</option>
+      </select>
+    </div>
+
+    <div class="ob-question">
+      <label>Anything else we should know? (optional)</label>
+      <textarea id="ob-notes" placeholder="Any additional context about your behaviors, therapy goals, etc."></textarea>
+    </div>
+
+    <div class="ob-buttons">
+      <button class="btn btn-secondary" onclick="skipOnboarding()">Skip for Now</button>
+      <button class="btn btn-primary" onclick="submitOnboarding()">Save & Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ TOAST CONTAINER ═══════════════════ -->
+<div id="toast-container"></div>
+
+<!-- ═══════════════════ NAV ═══════════════════ -->
+<nav>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    BFRB Detect
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="dashboard">Dashboard</button>
+    <button class="nav-tab" data-page="hud">Session HUD</button>
+    <button class="nav-tab" data-page="history">History</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="session-pill">
+      <div class="session-dot off" id="session-indicator"></div>
+      <span id="session-status-text">No Session</span>
+    </div>
+    <div class="session-pill" id="user-pill" style="cursor:pointer;" onclick="handleLogout()">
+      <span id="user-display-name" style="font-weight:600;color:var(--accent);">User</span>
+      <span style="font-size:11px;color:var(--text-dim);">Sign Out</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════ DASHBOARD PAGE ═══════════════════ -->
+<div class="page-view active" id="page-dashboard">
+
+  <!-- Stats Row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-fps">0</div>
+      <div class="stat-label">FPS</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value danger" id="stat-detections">0</div>
+      <div class="stat-label">Detections</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value warning" id="stat-pct">0%</div>
+      <div class="stat-label">BFRB Time</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-score">0%</div>
+      <div class="stat-label">BFRB Score</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value success" id="stat-accuracy">--</div>
+      <div class="stat-label">Accuracy</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-session-time">0:00</div>
+      <div class="stat-label">Session Time</div>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+
+    <!-- LEFT COLUMN -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <!-- Live Feed -->
+      <div class="card" style="flex:1;display:flex;flex-direction:column;">
+        <div class="card-head">
+          Live Detection Feed
+          <span class="badge badge-live" id="live-badge">LIVE</span>
+        </div>
+        <div class="card-body" style="flex:1;">
+          <div class="video-container">
+            <video id="input_video" autoplay muted playsinline></video>
+            <canvas id="output_canvas"></canvas>
+            <div class="border-flash" id="border-flash"></div>
+            <div class="state-badge nohand" id="state-badge">Initializing...</div>
+            <div class="dwell-bar-wrap" id="dwell-wrap">
+              <div class="dwell-lbl" id="dwell-label">Hold...</div>
+              <div class="dwell-track"><div class="dwell-fill" id="dwell-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bfrb-overlay-type" id="bfrb-type-overlay"></div>
+          </div>
+
+          <!-- Controls -->
+          <div class="controls">
+            <button class="btn btn-primary" id="btn-start" onclick="startSession()">Start Session</button>
+            <button class="btn btn-danger" id="btn-stop" onclick="stopSession()" style="display:none;">Stop Session</button>
+            <button class="btn btn-secondary" id="btn-calibrate" onclick="runCalibration()" title="Adaptive Threshold Calibration (Tier 2 / 2.3)">Calibrate</button>
+            <button class="btn btn-secondary" id="btn-pilot" onclick="openPilotModal()" title="Run a structured pilot trial (Tier 3 / 6.3)">Pilot Study</button>
+            <button class="btn btn-secondary" id="btn-export" onclick="exportSessionCsv()" title="Download session telemetry as CSV">Export CSV</button>
+            <span style="flex:1;"></span>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;">
+              <input type="checkbox" id="chk-calib-on-start" checked style="accent-color:var(--accent);"/>
+              Auto-calibrate on session start
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;">
+              <input type="checkbox" id="chk-ml" checked style="accent-color:var(--accent);"/>
+              ML fusion
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;" title="Use multi-zone face detection (13 anatomical regions)">
+              <input type="checkbox" id="chk-zones" checked style="accent-color:var(--accent);"/>
+              Multi-zone
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;" title="Per-frame IEEE telemetry logging">
+              <input type="checkbox" id="chk-telemetry" checked style="accent-color:var(--accent);"/>
+              Telemetry
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;">
+              <input type="checkbox" id="chk-notif" checked style="accent-color:var(--accent);"/>
+              Notifications
+            </label>
+          </div>
+
+          <!-- BFRB Selector -->
+          <div class="selector-panel">
+            <div class="selector-header">
+              <div class="selector-title">Detection Targets</div>
+              <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="multi" onclick="setSelectionMode('multi')">Multi</button>
+                <button class="mode-btn" data-mode="single" onclick="setSelectionMode('single')">Single</button>
+              </div>
+            </div>
+            <div class="bfrb-options" id="bfrb-options">
+              <!-- populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR -->
+    <div class="sidebar">
+
+      <!-- Detection Status -->
+      <div class="card">
+        <div class="card-head">
+          Detection Status
+          <span class="badge badge-info" id="status-badge">Monitoring</span>
+        </div>
+        <div class="card-body">
+          <div class="detection-status">
+            <div class="pred-label waiting" id="pred-label">Waiting for hand...</div>
+            <div class="type-label" id="bfrb-type-label"></div>
+          </div>
+          <div class="conf-row"><span>BFRB Confidence</span><span id="conf-text">--</span></div>
+          <div class="conf-track"><div class="conf-fill low" id="conf-fill" style="width:0%"></div></div>
+          <div class="signal-grid">
+            <div class="signal"><div class="s-label">Mouth</div><div class="s-value ok" id="sig-mouth">Closed</div></div>
+            <div class="signal"><div class="s-label">Fingers</div><div class="s-value" id="sig-fingers">-</div></div>
+            <div class="signal"><div class="s-label">Eating</div><div class="s-value ok" id="sig-eating">No</div></div>
+            <div class="signal"><div class="s-label">Resting</div><div class="s-value ok" id="sig-resting">No</div></div>
+            <div class="signal"><div class="s-label">ML Score</div><div class="s-value" id="sig-mlscore">--</div></div>
+            <div class="signal"><div class="s-label">Hand Pose</div><div class="s-value" id="sig-handpose">--</div></div>
+            <div class="signal"><div class="s-label">Fused</div><div class="s-value" id="sig-fused">--</div></div>
+            <div class="signal"><div class="s-label">Calibration</div><div class="s-value" id="sig-calib">Default</div></div>
+            <div class="signal" title="Closest face zone the hand is approaching (Tier 3 / 2.4)"><div class="s-label">Zone</div><div class="s-value" id="sig-zone">--</div></div>
+            <div class="signal" title="Tier 3 / 5.2: ML predictions over WebSocket"><div class="s-label">Transport</div><div class="s-value" id="sig-transport">HTTP</div></div>
+            <div class="signal" title="Pilot study trial in progress (Tier 3 / 6.3)"><div class="s-label">Pilot</div><div class="s-value" id="sig-pilot">--</div></div>
+            <div class="signal" title="Per-frame telemetry batches sent to /api/telemetry"><div class="s-label">Telemetry</div><div class="s-value" id="sig-telem">0</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Distances -->
+      <div class="card">
+        <div class="card-head">Live Distances</div>
+        <div class="card-body">
+          <div id="dist-list"></div>
+        </div>
+      </div>
+
+      <!-- Bouts (Tier 3 / 4.1) -->
+      <div class="card">
+        <div class="card-head">
+          Bouts (Tier 3 / 4.1)
+          <span class="badge badge-info" id="bouts-badge">0</span>
+        </div>
+        <div class="card-body" style="max-height:240px;overflow-y:auto;">
+          <div id="bouts-list" style="font-size:12px;color:var(--text-dim);">No bouts yet - bouts cluster repeated detections of the same type within 5s.</div>
+          <button class="btn btn-secondary" style="margin-top:8px;width:100%;" onclick="refreshBouts()">Refresh Bouts</button>
+        </div>
+      </div>
+
+      <!-- State History -->
+      <div class="card">
+        <div class="card-head">State History (30 frames)</div>
+        <div class="card-body">
+          <div class="state-dots" id="state-history"></div>
+        </div>
+      </div>
+
+      <!-- How It Works -->
+      <div class="card">
+        <div class="card-head">How It Works (v5)</div>
+        <div class="card-body">
+          <details open>
+            <summary>Detection pipeline</summary>
+            <p>Each frame flows through this chain:</p>
+            <ul>
+              <li><b>1&#xb7; One Euro Filter</b> - adaptive low-pass smoothing on every face + hand landmark</li>
+              <li><b>2&#xb7; Multi-Zone Face Detection</b> - 13 anatomical regions, centroid-based</li>
+              <li><b>3&#xb7; Hand Pose Classifier</b> - pinch_grip / fist / pointing / open_hand / curled</li>
+              <li><b>4&#xb7; 4-state Rule Engine</b> - IDLE &rarr; PROXIMITY &rarr; DWELL &rarr; BFRB with multi-signal scoring</li>
+              <li><b>5&#xb7; ML Classifier</b> - 16-feature Random Forest (trained on Kaggle CMI sensor data), 1.5s window</li>
+              <li><b>6&#xb7; Late Fusion</b> - fused_score = 0.6 &middot; ML + 0.4 &middot; rule</li>
+              <li><b>7&#xb7; Adaptive Threshold</b> - per-session calibration sets the proximity threshold</li>
+              <li><b>8&#xb7; WebSocket Transport</b> - real-time predictions over a persistent socket</li>
+              <li><b>9&#xb7; IEEE Telemetry</b> - per-frame structured logs, batched to /api/telemetry</li>
+            </ul>
+          </details>
+          <details>
+            <summary>Improvements (Tier 1 + 2)</summary>
+            <ul>
+              <li>Tier 1 / 2.1 - One Euro filter for landmark smoothing</li>
+              <li>Tier 1 / 2.2 - Replaced rule-only detection with ML classifier (late fusion)</li>
+              <li>Tier 1 / 3.1 - Multimodal late fusion (vision rule + sensor-trained ML)</li>
+              <li>Tier 2 / 2.3 - Adaptive threshold calibration</li>
+              <li>Tier 2 / 2.5 - Hand pose / grip classification</li>
+            </ul>
+          </details>
+          <details>
+            <summary>Improvements (Tier 3)</summary>
+            <ul>
+              <li>Tier 3 / 2.4 - Multi-zone face detection (13 anatomical regions)</li>
+              <li>Tier 3 / 4.1 - Bout detection with 5s gap-threshold</li>
+              <li>Tier 3 / 5.2 - WebSocket real-time predictions (Flask-SocketIO)</li>
+              <li>Tier 3 / 6.3 - Pilot study mode (precision/recall/F1 per trial)</li>
+              <li>Tier 3 / 1.4 - Stacking ensemble in offline pipeline</li>
+              <li>Tier 3 / 1.6 - SMOTE class imbalance handling</li>
+            </ul>
+          </details>
+          <details>
+            <summary>Improvements (Tier 4)</summary>
+            <ul>
+              <li>Tier 4 / 4.6 - Progressive Web App (manifest + service worker)</li>
+              <li>Tier 4 / 3.2 - Feature mapping validation (KS test + t-SNE)</li>
+              <li>Tier 4 / 3.3 - CORAL domain adaptation (offline)</li>
+              <li>Tier 4 / 4.3 - Federated learning simulation (FedAvg, offline)</li>
+              <li>Tier 4 / 7.1 - Programmatic system architecture diagram</li>
+            </ul>
+          </details>
+        </div>
+      </div>
+
+      <!-- Detection Log -->
+      <div class="card">
+        <div class="card-head">Event Log</div>
+        <div class="card-body">
+          <div class="det-log" id="det-log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ HUD PAGE ═══════════════════ -->
+<div class="page-view" id="page-hud">
+  <div class="hud-stats-row">
+    <div class="stat-card">
+      <div class="stat-value" id="hud-total-sessions">0</div>
+      <div class="stat-label">Total Sessions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value danger" id="hud-total-detections">0</div>
+      <div class="stat-label">Total Detections</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value success" id="hud-accuracy">--%</div>
+      <div class="stat-label">Model Accuracy</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value warning" id="hud-feedback-count">0</div>
+      <div class="stat-label">Feedback Given</div>
+    </div>
+  </div>
+  <div class="hud-grid">
+    <!-- Daily Detections Chart -->
+    <div class="card">
+      <div class="card-head">Daily Detections (Last 30 Days)</div>
+      <div class="card-body">
+        <div class="chart-container"><canvas id="chart-daily"></canvas></div>
+      </div>
+    </div>
+    <!-- Detection By Type -->
+    <div class="card">
+      <div class="card-head">Detection by Type</div>
+      <div class="card-body">
+        <div class="chart-container"><canvas id="chart-types"></canvas></div>
+      </div>
+    </div>
+    <!-- Session Timeline -->
+    <div class="card">
+      <div class="card-head">Current Session Timeline</div>
+      <div class="card-body">
+        <div class="chart-container"><canvas id="chart-timeline"></canvas></div>
+      </div>
+    </div>
+    <!-- Accuracy Over Time -->
+    <div class="card">
+      <div class="card-head">Feedback: Accurate vs False Alarms</div>
+      <div class="card-body">
+        <div class="chart-container"><canvas id="chart-accuracy"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ HISTORY PAGE ═══════════════════ -->
+<div class="page-view" id="page-history">
+  <div style="padding:20px;">
+    <div class="card">
+      <div class="card-head">Session History <span class="badge badge-info" id="history-count">0 sessions</span></div>
+      <div class="card-body" style="padding:0;">
+        <table class="session-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Date</th>
+              <th>Duration</th>
+              <th>Detections</th>
+              <th>Confirmed</th>
+              <th>Rejected</th>
+              <th>Types Monitored</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="session-table-body">
+            <tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:30px;">No sessions yet. Start a session to begin tracking.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<footer>
+  BFRB Detection System &mdash; ENEB453 Final Project &mdash; Nishanth S. &mdash; University of Maryland
+  &nbsp;|&nbsp; Stack: Python Flask + MediaPipe + SQLite + Chart.js &nbsp;|&nbsp; v5 ML Fusion Engine
+</footer>
+
+<!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+<script>
+// =============================================================================
+// AUTH & ONBOARDING
+// =============================================================================
+(function checkAuth() {
+  fetch("/api/auth/me")
+    .then(r => r.json())
+    .then(data => {
+      if (!data.authenticated) {
+        window.location.href = "/login";
+        return;
+      }
+      const nameEl = document.getElementById("user-display-name");
+      if (nameEl) nameEl.textContent = data.full_name || data.username;
+      if (!data.onboarding_complete) {
+        document.getElementById("onboarding-overlay").classList.add("show");
+      }
+    })
+    .catch(() => {});
+})();
+
+function handleLogout() {
+  fetch("/api/auth/logout", { method: "POST" })
+    .then(() => { window.location.href = "/login"; })
+    .catch(() => { window.location.href = "/login"; });
+}
+
+function submitOnboarding() {
+  const bfrbs = Array.from(document.querySelectorAll("#ob-bfrbs .ob-chip.selected input"))
+    .map(i => i.value);
+  const triggers = Array.from(document.querySelectorAll("#ob-triggers .ob-chip.selected input"))
+    .map(i => i.value);
+
+  const responses = {
+    bfrbs: bfrbs,
+    frequency: document.getElementById("ob-frequency").value,
+    triggers: triggers,
+    goal: document.getElementById("ob-goal").value,
+    alerts: document.getElementById("ob-alerts").value,
+    notes: document.getElementById("ob-notes").value.trim(),
+  };
+
+  fetch("/api/onboarding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ responses }),
+  })
+    .then(r => r.json())
+    .then(() => {
+      document.getElementById("onboarding-overlay").classList.remove("show");
+      showToast("Profile saved! Your detection experience is now personalized.", "success");
+      // Pre-select the user's reported BFRBs
+      if (bfrbs.length > 0) {
+        APP.selectedTypes.clear();
+        bfrbs.forEach(b => APP.selectedTypes.add(b));
+        buildBFRBSelector();
+      }
+    })
+    .catch(() => {
+      showToast("Failed to save profile", "error");
+    });
+}
+
+function skipOnboarding() {
+  document.getElementById("onboarding-overlay").classList.remove("show");
+  // Still mark as complete
+  fetch("/api/onboarding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ responses: { skipped: true } }),
+  }).catch(() => {});
+}
+
+// =============================================================================
+// APP STATE
+// =============================================================================
+const APP = {
+  sessionId: null,
+  sessionActive: false,
+  sessionStartTime: null,
+  selectionMode: "multi",
+  selectedTypes: new Set(),
+  allTypes: [],
+  notificationsEnabled: true,
+  pendingNotification: null,
+  detectionCooldown: false,
+  lastNotifTime: 0,
+  NOTIF_COOLDOWN_MS: 8000,
+  detectionLog: [],
+  sessionDetections: [],
+  feedbackStats: { total: 0, accurate: 0 },
+  charts: {},
+  lastHandPose: "unknown",   // Tier 2 / 2.5
+  mlEnabled: true,           // Tier 1 / 2.2 + 3.1
+  lastZone: null,            // Tier 3 / 2.4
+};
+
+// =============================================================================
+// [PWA] Service worker registration  (Tier 4 / 4.6)
+// =============================================================================
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
+      .then(reg => console.log("[PWA] service worker registered:", reg.scope))
+      .catch(err => console.warn("[PWA] service worker failed:", err));
+  });
+}
+
+// =============================================================================
+// [IEEE]  PER-FRAME TELEMETRY BUFFER
+// =============================================================================
+//
+// Telemetry collects compact per-frame structured records and POSTs them in
+// batches of ~50 frames (~1.5-2s) to /api/telemetry. This gives us a complete
+// audit trail of every observation while keeping network overhead low. The
+// CSV export endpoint streams these out for IEEE-grade reproducibility.
+const Telemetry = {
+  buffer: [],
+  batched: 0,
+  MAX_BUFFER: 200,
+  FLUSH_INTERVAL_MS: 2000,
+  _flushHandle: null,
+
+  push(rec) {
+    if (!APP.sessionActive || !APP.sessionId) return;
+    this.buffer.push(rec);
+    if (this.buffer.length >= this.MAX_BUFFER) this.flush();
+    if (!this._flushHandle) {
+      this._flushHandle = setTimeout(() => this.flush(), this.FLUSH_INTERVAL_MS);
+    }
+  },
+
+  flush() {
+    if (this._flushHandle) { clearTimeout(this._flushHandle); this._flushHandle = null; }
+    if (!this.buffer.length || !APP.sessionId) return;
+    const batch = this.buffer.splice(0);
+    fetch("/api/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: APP.sessionId, events: batch }),
+      keepalive: true,
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.stored) {
+          this.batched += d.stored;
+          const sig = document.getElementById("sig-telem");
+          if (sig) sig.textContent = this.batched;
+        }
+      })
+      .catch(() => {
+        // network error: re-queue (bounded so we don't blow up memory)
+        if (this.buffer.length < this.MAX_BUFFER * 2) {
+          this.buffer = batch.concat(this.buffer);
+        }
+      });
+  },
+
+  reset() {
+    this.buffer = [];
+    this.batched = 0;
+    const sig = document.getElementById("sig-telem");
+    if (sig) sig.textContent = "0";
+  },
+};
+window.addEventListener("beforeunload", () => Telemetry.flush());
+
+// =============================================================================
+// [Tier 3 / 6.3]  PILOT STUDY MANAGER
+// =============================================================================
+//
+// Drives a structured trial: setup -> running with countdown -> review.
+// Every trial gets persisted to /api/pilot/* with confusion-matrix counts so
+// we can compute precision/recall/F1 per trial.
+const PilotStudy = {
+  running: false,
+  trialId: null,
+  participantId: null,
+  targetGesture: null,
+  expectedCount: 0,
+  durationSec: 30,
+  detected: 0,
+  endTimeoutHandle: null,
+  countdownHandle: null,
+  startedAt: 0,
+
+  start() {
+    if (!APP.sessionActive) {
+      showToast("Start a session first - pilot trials are scoped to a session", "warning");
+      return;
+    }
+    const part   = document.getElementById("pilot-participant").value.trim() || "P01";
+    const target = document.getElementById("pilot-gesture").value;
+    const expected = parseInt(document.getElementById("pilot-expected").value || "0", 10);
+    const duration = parseInt(document.getElementById("pilot-duration").value || "30", 10);
+
+    fetch("/api/pilot/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: APP.sessionId,
+        participant_id: part,
+        target_gesture: target,
+        expected_count: expected,
+        duration_sec: duration,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (!d || !d.pilot_id) {
+          showToast("Failed to start pilot trial", "error");
+          return;
+        }
+        this.trialId = d.pilot_id;
+        this.participantId = part;
+        this.targetGesture = target;
+        this.expectedCount = expected;
+        this.durationSec   = duration;
+        this.detected      = 0;
+        this.startedAt     = Date.now();
+        this.running       = true;
+
+        document.getElementById("pilot-step-setup").style.display = "none";
+        document.getElementById("pilot-step-running").style.display = "block";
+        document.getElementById("pilot-running-title").textContent =
+          `Trial: ${target}  (P=${part})`;
+        document.getElementById("pilot-running-sub").textContent =
+          `Perform "${target}" naturally. Expected ~${expected} events.`;
+        document.getElementById("pilot-detected-count").textContent = "0";
+        const counterEl = document.getElementById("pilot-counter");
+        let secs = duration;
+        counterEl.textContent = secs;
+
+        const sigP = document.getElementById("sig-pilot");
+        if (sigP) { sigP.textContent = "RUN"; sigP.className = "s-value active"; }
+
+        this.countdownHandle = setInterval(() => {
+          secs--;
+          counterEl.textContent = secs;
+          if (secs <= 0) clearInterval(this.countdownHandle);
+        }, 1000);
+        this.endTimeoutHandle = setTimeout(() => this.stop(), duration * 1000);
+
+        showToast(`Pilot trial started - ${duration}s for "${target}"`, "info");
+      })
+      .catch(() => showToast("Failed to start pilot trial", "error"));
+  },
+
+  onAutoDetection(bfrbType) {
+    if (!this.running) return;
+    if (bfrbType === this.targetGesture
+        || (this.targetGesture === "Face Touching" && bfrbType.includes("Touching"))) {
+      this.detected++;
+      const el = document.getElementById("pilot-detected-count");
+      if (el) el.textContent = this.detected;
+    }
+  },
+
+  stop() {
+    if (!this.running) return;
+    this.running = false;
+    if (this.countdownHandle)   clearInterval(this.countdownHandle);
+    if (this.endTimeoutHandle)  clearTimeout(this.endTimeoutHandle);
+
+    document.getElementById("pilot-step-running").style.display = "none";
+    document.getElementById("pilot-step-review").style.display = "block";
+    document.getElementById("pilot-review-target").textContent = this.targetGesture;
+    document.getElementById("pilot-actual-detected").value = this.detected;
+    // Sensible defaults for review: assume detected = TP, FP = 0, FN = expected - TP
+    document.getElementById("pilot-tp").value = this.detected;
+    document.getElementById("pilot-fp").value = 0;
+    document.getElementById("pilot-fn").value = Math.max(0, this.expectedCount - this.detected);
+
+    const sigP = document.getElementById("sig-pilot");
+    if (sigP) { sigP.textContent = "REVIEW"; sigP.className = "s-value warning"; }
+  },
+
+  submitReview() {
+    if (!this.trialId) return;
+    const tp = parseInt(document.getElementById("pilot-tp").value || "0", 10);
+    const fp = parseInt(document.getElementById("pilot-fp").value || "0", 10);
+    const fn = parseInt(document.getElementById("pilot-fn").value || "0", 10);
+    const notes = document.getElementById("pilot-notes").value.trim();
+
+    fetch(`/api/pilot/${this.trialId}/end`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        actual_count: this.detected,
+        true_positive: tp, false_positive: fp, false_negative: fn,
+        notes,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        const m = d && d.metrics ? d.metrics : {};
+        showToast(
+          `Pilot saved - precision=${(m.precision*100||0).toFixed(0)}% `
+          + `recall=${(m.recall*100||0).toFixed(0)}% F1=${(m.f1*100||0).toFixed(0)}%`,
+          "success"
+        );
+        const sigP = document.getElementById("sig-pilot");
+        if (sigP) { sigP.textContent = "DONE"; sigP.className = "s-value ok"; }
+      })
+      .catch(() => showToast("Failed to save pilot trial", "error"))
+      .finally(() => closePilotModal());
+  },
+};
+
+function openPilotModal() {
+  if (!APP.sessionActive) {
+    showToast("Start a session first to run a pilot trial", "warning");
+    return;
+  }
+  document.getElementById("pilot-step-setup").style.display = "block";
+  document.getElementById("pilot-step-running").style.display = "none";
+  document.getElementById("pilot-step-review").style.display = "none";
+  document.getElementById("pilot-overlay").classList.add("show");
+}
+function closePilotModal() {
+  document.getElementById("pilot-overlay").classList.remove("show");
+}
+
+// =============================================================================
+// [Tier 3 / 4.1]  BOUT VIEW
+// =============================================================================
+function refreshBouts() {
+  if (!APP.sessionId) {
+    document.getElementById("bouts-list").textContent = "Start a session to view bouts.";
+    return;
+  }
+  fetch(`/api/bouts/${APP.sessionId}?gap=5&min_count=1`)
+    .then(r => r.json())
+    .then(d => {
+      const list = document.getElementById("bouts-list");
+      const badge = document.getElementById("bouts-badge");
+      const bouts = d.bouts || [];
+      badge.textContent = bouts.length;
+      if (!bouts.length) {
+        list.textContent = "No bouts yet - bouts cluster repeated detections of the same type within 5s.";
+        return;
+      }
+      list.innerHTML = "";
+      for (const b of bouts.slice(-30).reverse()) {
+        const div = document.createElement("div");
+        div.className = "bout-row";
+        const dur = (b.duration_ms / 1000).toFixed(1);
+        const t0  = (b.start_ms / 1000).toFixed(1);
+        div.innerHTML = `<span class="bout-type">${b.bfrb_type}</span>
+          <span class="bout-meta" title="t0 (s)">${t0}s</span>
+          <span class="bout-meta" title="duration">${dur}s</span>
+          <span class="bout-meta" title="count"><strong>${b.count}x</strong></span>`;
+        list.appendChild(div);
+      }
+    })
+    .catch(() => {
+      document.getElementById("bouts-list").textContent = "Failed to load bouts.";
+    });
+}
+
+// =============================================================================
+// [IEEE]  CSV EXPORT
+// =============================================================================
+function exportSessionCsv() {
+  if (!APP.sessionId) {
+    showToast("No session to export. Start a session first.", "warning");
+    return;
+  }
+  // flush any pending telemetry first
+  Telemetry.flush();
+  const url = `/api/export/session/${APP.sessionId}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `bfrb_session_${APP.sessionId}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  showToast("Session export queued - check your downloads folder", "success");
+}
+
+// =============================================================================
+// TOAST NOTIFICATIONS
+// =============================================================================
+function showToast(msg, type = "info") {
+  const container = document.getElementById("toast-container");
+  const toast = document.createElement("div");
+  toast.className = "toast " + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = "0"; toast.style.transition = "opacity .3s"; }, 3000);
+  setTimeout(() => toast.remove(), 3500);
+}
+
+// =============================================================================
+// GLOBAL NOTIFICATION (BFRB ALERT)
+// =============================================================================
+function showBFRBNotification(bfrbType, confidence, detectionId) {
+  if (!APP.notificationsEnabled || !APP.sessionActive) return;
+  const now = Date.now();
+  if (now - APP.lastNotifTime < APP.NOTIF_COOLDOWN_MS) return;
+  APP.lastNotifTime = now;
+
+  APP.pendingNotification = { detectionId, bfrbType, confidence, shownAt: now };
+
+  document.getElementById("notif-bfrb-type").textContent = bfrbType;
+  document.getElementById("notif-sub").textContent =
+    `Detected with ${Math.round(confidence * 100)}% confidence - Please stop and take a moment.`;
+
+  const overlay = document.getElementById("notification-overlay");
+  overlay.classList.add("show");
+
+  // Also try browser notification
+  if (Notification.permission === "granted") {
+    new Notification("BFRB Detected: " + bfrbType, {
+      body: `Confidence: ${Math.round(confidence * 100)}%. Take a moment to stop.`,
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9888;</text></svg>",
+      requireInteraction: true,
+    });
+  }
+}
+
+function submitNotifFeedback(isAccurate) {
+  const notif = APP.pendingNotification;
+  if (!notif) { dismissNotif(); return; }
+
+  const responseTime = Date.now() - notif.shownAt;
+
+  fetch("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      detection_id: notif.detectionId,
+      session_id: APP.sessionId,
+      is_accurate: isAccurate,
+      bfrb_type: notif.bfrbType,
+      confidence_at: notif.confidence,
+      response_time_ms: responseTime,
+    }),
+  }).then(() => {
+    APP.feedbackStats.total++;
+    if (isAccurate) APP.feedbackStats.accurate++;
+    updateAccuracyDisplay();
+    showToast(isAccurate ? "Feedback: Correct detection recorded" : "Feedback: False alarm recorded", isAccurate ? "success" : "warning");
+  }).catch(() => showToast("Failed to save feedback", "error"));
+
+  dismissNotif();
+}
+
+function dismissNotif() {
+  document.getElementById("notification-overlay").classList.remove("show");
+  APP.pendingNotification = null;
+}
+
+// =============================================================================
+// PAGE NAVIGATION
+// =============================================================================
+document.querySelectorAll(".nav-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".page-view").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("page-" + tab.dataset.page).classList.add("active");
+    if (tab.dataset.page === "hud") loadHUDData();
+    if (tab.dataset.page === "history") loadHistory();
+  });
+});
+
+// =============================================================================
+// BFRB TYPE SELECTOR
+// =============================================================================
+const BFRB_ICONS = {
+  "Hair Pulling": "&#128136;", "Nail Biting": "&#128133;", "Skin Picking": "&#9997;",
+  "Nose Picking": "&#128067;", "Lip Picking": "&#128068;", "Face Touching": "&#9995;",
+  "Forehead Touching": "&#128400;", "Cheek Touching": "&#129303;",
+};
+
+function buildBFRBSelector() {
+  const container = document.getElementById("bfrb-options");
+  container.innerHTML = "";
+  APP.allTypes.forEach(t => {
+    const selected = APP.selectedTypes.has(t.name);
+    const div = document.createElement("div");
+    div.className = "bfrb-option" + (selected ? " selected" : "");
+    div.dataset.name = t.name;
+    div.innerHTML = `
+      <div class="bfrb-check">${selected ? "&#10003;" : ""}</div>
+      <div>
+        <div class="bfrb-name">${BFRB_ICONS[t.name] || "&#128073;"} ${t.name}</div>
+        <div class="bfrb-cat">${t.category || "general"}</div>
+      </div>`;
+    div.addEventListener("click", () => toggleBFRBType(t.name));
+    container.appendChild(div);
+  });
+}
+
+function toggleBFRBType(name) {
+  if (APP.selectionMode === "single") {
+    APP.selectedTypes.clear();
+    APP.selectedTypes.add(name);
+  } else {
+    if (APP.selectedTypes.has(name)) {
+      APP.selectedTypes.delete(name);
+    } else {
+      APP.selectedTypes.add(name);
+    }
+  }
+  buildBFRBSelector();
+}
+
+function setSelectionMode(mode) {
+  APP.selectionMode = mode;
+  document.querySelectorAll(".mode-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  if (mode === "single" && APP.selectedTypes.size > 1) {
+    const first = APP.selectedTypes.values().next().value;
+    APP.selectedTypes.clear();
+    APP.selectedTypes.add(first);
+  }
+  buildBFRBSelector();
+}
+
+// Load BFRB types from backend
+fetch("/api/bfrb-types")
+  .then(r => r.json())
+  .then(types => {
+    APP.allTypes = types;
+    types.forEach(t => APP.selectedTypes.add(t.name));
+    buildBFRBSelector();
+  })
+  .catch(() => {
+    // Fallback
+    APP.allTypes = [
+      { name: "Hair Pulling", category: "pulling" }, { name: "Nail Biting", category: "biting" },
+      { name: "Skin Picking", category: "picking" }, { name: "Nose Picking", category: "picking" },
+      { name: "Lip Picking", category: "picking" }, { name: "Face Touching", category: "touching" },
+      { name: "Forehead Touching", category: "touching" }, { name: "Cheek Touching", category: "touching" },
+    ];
+    APP.allTypes.forEach(t => APP.selectedTypes.add(t.name));
+    buildBFRBSelector();
+  });
+
+// =============================================================================
+// SESSION MANAGEMENT
+// =============================================================================
+function startSession() {
+  fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      input_type: "webcam",
+      selected_types: [...APP.selectedTypes],
+      selection_mode: APP.selectionMode,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    APP.sessionId = data.id;
+    APP.sessionActive = true;
+    APP.sessionStartTime = Date.now();
+    APP.sessionDetections = [];
+    detector.bfrbEvents = 0;
+    detector.bfrbFrames = 0;
+    detector.totalFrames = 0;
+
+    Telemetry.reset();
+    refreshBouts();
+
+    document.getElementById("btn-start").style.display = "none";
+    document.getElementById("btn-stop").style.display = "";
+    document.getElementById("session-indicator").className = "session-dot live";
+    document.getElementById("session-status-text").textContent = "Session #" + data.id;
+
+    showToast("Session started - monitoring " + APP.selectedTypes.size + " BFRB types", "success");
+
+    // Request browser notification permission
+    if (Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
+    // Tier 2 / 2.3: optionally run adaptive threshold calibration
+    const wantCalib = document.getElementById("chk-calib-on-start");
+    if (wantCalib && wantCalib.checked) {
+      // Slight delay so the camera is fully warmed and detector has fresh samples
+      setTimeout(() => {
+        Calibration.run(APP.sessionId).then(d => {
+          if (d) {
+            const el = document.getElementById("sig-calib");
+            el.textContent = "T=" + d.threshold.toFixed(2);
+            el.className = "s-value active";
+          }
+        });
+      }, 600);
+    }
+  })
+  .catch(() => showToast("Failed to start session", "error"));
+}
+
+// Manual calibration trigger from the toolbar.
+function runCalibration() {
+  Calibration.run(APP.sessionId || -1).then(d => {
+    if (d) {
+      const el = document.getElementById("sig-calib");
+      el.textContent = "T=" + d.threshold.toFixed(2);
+      el.className = "s-value active";
+    }
+  });
+}
+
+function stopSession() {
+  if (!APP.sessionId) return;
+
+  // Flush any pending telemetry before closing the session
+  Telemetry.flush();
+  refreshBouts();
+
+  fetch(`/api/sessions/${APP.sessionId}/end`, { method: "PUT" })
+    .then(() => {
+      showToast(`Session #${APP.sessionId} ended - ${detector.bfrbEvents} detections recorded`, "success");
+      APP.sessionActive = false;
+      APP.sessionId = null;
+      APP.sessionStartTime = null;
+
+      document.getElementById("btn-start").style.display = "";
+      document.getElementById("btn-stop").style.display = "none";
+      document.getElementById("session-indicator").className = "session-dot off";
+      document.getElementById("session-status-text").textContent = "No Session";
+    })
+    .catch(() => showToast("Failed to end session", "error"));
+}
+
+// Update session timer
+setInterval(() => {
+  if (APP.sessionActive && APP.sessionStartTime) {
+    const elapsed = Math.floor((Date.now() - APP.sessionStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    document.getElementById("stat-session-time").textContent =
+      mins + ":" + String(secs).padStart(2, "0");
+  }
+}, 1000);
+
+// Notification checkbox
+document.getElementById("chk-notif").addEventListener("change", e => {
+  APP.notificationsEnabled = e.target.checked;
+});
+
+// =============================================================================
+// [Tier 1 / 2.1] ONE EURO FILTER  — adaptive low-pass for landmark smoothing
+// =============================================================================
+//
+// Reference: Casiez, Roussel, Vogel — "1€ Filter" (CHI 2012).
+//   x_hat_i = a * x_i + (1 - a) * x_hat_{i-1}
+//   a = 1 / (1 + tau / (dt * fc))
+//   fc = mincutoff + beta * |dx/dt|
+// At low speed -> heavy smoothing. At high speed -> minimal lag.
+class OneEuroFilter {
+  constructor({ freq = 30, mincutoff = 1.0, beta = 0.05, dcutoff = 1.0 } = {}) {
+    this.freq = freq; this.mincutoff = mincutoff; this.beta = beta; this.dcutoff = dcutoff;
+    this.x_prev = null; this.dx_prev = 0; this.t_prev = null;
+  }
+  _alpha(cutoff, dt) {
+    const tau = 1.0 / (2 * Math.PI * cutoff);
+    return 1.0 / (1.0 + tau / dt);
+  }
+  filter(x, t) {
+    if (this.t_prev === null || x === null || x === undefined) {
+      this.t_prev = t; this.x_prev = x; this.dx_prev = 0; return x;
+    }
+    const dt = Math.max((t - this.t_prev) / 1000.0, 1e-3);
+    const dx = (x - this.x_prev) / dt;
+    const a_d = this._alpha(this.dcutoff, dt);
+    const dx_hat = a_d * dx + (1 - a_d) * this.dx_prev;
+    const cutoff = this.mincutoff + this.beta * Math.abs(dx_hat);
+    const a_x = this._alpha(cutoff, dt);
+    const x_hat = a_x * x + (1 - a_x) * this.x_prev;
+    this.x_prev = x_hat; this.dx_prev = dx_hat; this.t_prev = t;
+    return x_hat;
+  }
+}
+
+class LandmarkSmoother {
+  constructor(opts = { mincutoff: 1.0, beta: 0.05 }) { this.opts = opts; this.filters = new Map(); }
+  _f(key) {
+    if (!this.filters.has(key)) this.filters.set(key, new OneEuroFilter(this.opts));
+    return this.filters.get(key);
+  }
+  smoothLandmarks(landmarks, prefix, t) {
+    if (!landmarks) return null;
+    const out = new Array(landmarks.length);
+    for (let i = 0; i < landmarks.length; i++) {
+      const lm = landmarks[i];
+      const sx = this._f(`${prefix}:${i}:x`).filter(lm.x, t);
+      const sy = this._f(`${prefix}:${i}:y`).filter(lm.y, t);
+      const sz = this._f(`${prefix}:${i}:z`).filter(lm.z !== undefined ? lm.z : 0, t);
+      out[i] = { x: sx, y: sy, z: sz, visibility: lm.visibility };
+    }
+    return out;
+  }
+  reset() { this.filters.clear(); }
+}
+
+// Singletons — separate instances so face/hand jitter profiles don't bleed together.
+const handSmoother = new LandmarkSmoother({ mincutoff: 1.0, beta: 0.05 });
+const faceSmoother = new LandmarkSmoother({ mincutoff: 1.5, beta: 0.03 });
+
+// =============================================================================
+// [Tier 2 / 2.5] HAND POSE / GRIP CLASSIFIER
+// =============================================================================
+//
+// Decides between five symbolic poses by combining finger-curl angles + the
+// thumb-index pinch distance. Returns one of:
+//   pinch_grip  -> hair pulling, skin picking, nail biting
+//   curled      -> scratching
+//   pointing    -> nose / lip picking
+//   fist        -> non-BFRB
+//   open_hand   -> face touching, not a BFRB
+function classifyHandPose(hand) {
+  if (!hand || hand.length < 21) return "unknown";
+  const FINGERS = {
+    thumb:  [1, 2, 3, 4],
+    index:  [5, 6, 7, 8],
+    middle: [9, 10, 11, 12],
+    ring:   [13, 14, 15, 16],
+    pinky:  [17, 18, 19, 20],
+  };
+  const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) });
+  const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+  const mag = a => Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z) || 1e-8;
+  const angle = (p1, p2, p3) => {
+    const v1 = sub(p2, p1), v2 = sub(p3, p2);
+    return Math.acos(Math.max(-1, Math.min(1, dot(v1, v2) / (mag(v1) * mag(v2)))));
+  };
+  const curl = {};
+  for (const [name, j] of Object.entries(FINGERS)) {
+    curl[name] = angle(hand[j[0]], hand[j[1]], hand[j[2]]);
+  }
+  const tipDist = (a, b) =>
+    Math.hypot(hand[a].x - hand[b].x, hand[a].y - hand[b].y);
+
+  const pinch = tipDist(4, 8);
+  const allCurled = ["index", "middle", "ring", "pinky"].every(f => curl[f] > 1.4);
+  const indexExt = curl.index < 0.7;
+  const othersCurled = ["middle", "ring", "pinky"].every(f => curl[f] > 1.2);
+
+  if (pinch < 0.05) return "pinch_grip";
+  if (allCurled) return "fist";
+  if (indexExt && othersCurled) return "pointing";
+  if (["index", "middle", "ring", "pinky"].every(f => curl[f] < 0.7)) return "open_hand";
+  return "curled";
+}
+
+// =============================================================================
+// [Tier 1 / 2.2 + 3.1] ML FEATURE WINDOW + INFERENCE + LATE FUSION
+// =============================================================================
+//
+// We accumulate the per-frame raw signals required to compute the same 16
+// features the offline RF classifier was trained on, then periodically POST
+// them to /api/predict. The returned probability is late-fused with the
+// rule-based engine score.
+const ML_FEATURE_NAMES = [
+  "acc_mag_mean", "acc_mag_std", "acc_mag_max",
+  "rot_speed_mean", "thm_mean", "thm_max",
+  "tof1_min_mean", "tof1_mean_mean",   // wrist  -> nose
+  "tof2_min_mean", "tof2_mean_mean",   // index  -> mouth
+  "tof3_min_mean", "tof3_mean_mean",   // thumb  -> cheek
+  "tof4_min_mean", "tof4_mean_mean",   // palm   -> forehead
+  "tof5_min_mean", "tof5_mean_mean",   // wrist  -> chin
+];
+
+const ML_NORM = {
+  velocity_max: 0.15,    // matches feature_meta.json mediapipe_normalization
+  rotation_max: 3.14159,
+  distance_max: 0.8,
+  overlap_max:  1.0,
+};
+
+class MLFeatureWindow {
+  constructor(seconds = 1.5) {
+    this.windowMs = seconds * 1000;
+    this.frames = [];          // array of { t, vel, rot, ovl, d1..d5 }
+    this.lastWrist = null;
+    this.lastPalmNormal = null;
+  }
+  reset() { this.frames = []; this.lastWrist = null; this.lastPalmNormal = null; }
+  _palmNormal(hand) {
+    const a = hand[0], b = hand[5], c = hand[17];
+    const u = { x: b.x - a.x, y: b.y - a.y, z: (b.z || 0) - (a.z || 0) };
+    const v = { x: c.x - a.x, y: c.y - a.y, z: (c.z || 0) - (a.z || 0) };
+    const n = {
+      x: u.y * v.z - u.z * v.y,
+      y: u.z * v.x - u.x * v.z,
+      z: u.x * v.y - u.y * v.x,
+    };
+    const m = Math.hypot(n.x, n.y, n.z) || 1e-8;
+    return { x: n.x / m, y: n.y / m, z: n.z / m };
+  }
+  push(hand, face, t, faceWidth, faceLandmarks) {
+    if (!hand || !face) return;
+    const wrist = hand[0];
+    let vel = 0;
+    if (this.lastWrist) {
+      const dx = wrist.x - this.lastWrist.x;
+      const dy = wrist.y - this.lastWrist.y;
+      vel = Math.hypot(dx, dy);
+    }
+    this.lastWrist = { x: wrist.x, y: wrist.y };
+
+    let rot = 0;
+    const pn = this._palmNormal(hand);
+    if (this.lastPalmNormal) {
+      const cos = Math.max(-1, Math.min(1,
+        pn.x * this.lastPalmNormal.x + pn.y * this.lastPalmNormal.y + pn.z * this.lastPalmNormal.z));
+      rot = Math.acos(cos);
+    }
+    this.lastPalmNormal = pn;
+
+    // Hand-face overlap fraction (proxy for thermal / contact)
+    const fxMin = Math.min(...face.slice(0, 468).map(p => p.x));
+    const fxMax = Math.max(...face.slice(0, 468).map(p => p.x));
+    const fyMin = Math.min(...face.slice(0, 468).map(p => p.y));
+    const fyMax = Math.max(...face.slice(0, 468).map(p => p.y));
+    const tips = [4, 8, 12, 16, 20];
+    let inside = 0;
+    for (const i of tips) {
+      const p = hand[i];
+      if (p && p.x >= fxMin && p.x <= fxMax && p.y >= fyMin && p.y <= fyMax) inside++;
+    }
+    const ovl = inside / tips.length;
+
+    // Five anchor distances analogous to the Kaggle ToF channels (normalized
+    // by face width so they are scale-independent).
+    const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) / Math.max(faceWidth, 1e-3);
+    const f = (i) => face[i];
+    const wristToNose    = d(hand[0],  f(1));     // ToF1
+    const indexToMouth   = d(hand[8],  f(13));    // ToF2
+    const thumbToCheek   = d(hand[4],  f(234));   // ToF3
+    const palmToForehead = d(hand[9],  f(10));    // ToF4
+    const wristToChin    = d(hand[0],  f(152));   // ToF5
+
+    this.frames.push({
+      t,
+      vel: Math.min(vel / ML_NORM.velocity_max, 1.0),
+      rot: Math.min(rot / ML_NORM.rotation_max, 1.0),
+      ovl: Math.min(ovl, ML_NORM.overlap_max),
+      d1: Math.min(wristToNose    / ML_NORM.distance_max, 1.0),
+      d2: Math.min(indexToMouth   / ML_NORM.distance_max, 1.0),
+      d3: Math.min(thumbToCheek   / ML_NORM.distance_max, 1.0),
+      d4: Math.min(palmToForehead / ML_NORM.distance_max, 1.0),
+      d5: Math.min(wristToChin    / ML_NORM.distance_max, 1.0),
+    });
+    while (this.frames.length && t - this.frames[0].t > this.windowMs) {
+      this.frames.shift();
+    }
+  }
+  ready() { return this.frames.length >= 8; }
+  features() {
+    if (!this.ready()) return null;
+    const f = this.frames;
+    const arr = (k) => f.map(x => x[k]);
+    const vels = arr("vel");
+    const stat = (a) => {
+      const m = a.reduce((s, v) => s + v, 0) / a.length;
+      const sd = Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length);
+      return { mean: m, std: sd, max: Math.max(...a), min: Math.min(...a) };
+    };
+    const sV = stat(vels);
+    const rot_mean = arr("rot").reduce((s, v) => s + v, 0) / f.length;
+    const ovl = arr("ovl");
+    const ovl_mean = ovl.reduce((s, v) => s + v, 0) / f.length;
+    const ovl_max = Math.max(...ovl);
+
+    const tofStats = (k) => {
+      const a = arr(k);
+      return { min_mean: Math.min(...a), mean_mean: a.reduce((s,v) => s + v, 0) / a.length };
+    };
+    const t1 = tofStats("d1"), t2 = tofStats("d2"), t3 = tofStats("d3"),
+          t4 = tofStats("d4"), t5 = tofStats("d5");
+
+    return [
+      sV.mean, sV.std, sV.max,
+      rot_mean,
+      ovl_mean, ovl_max,
+      t1.min_mean, t1.mean_mean,
+      t2.min_mean, t2.mean_mean,
+      t3.min_mean, t3.mean_mean,
+      t4.min_mean, t4.mean_mean,
+      t5.min_mean, t5.mean_mean,
+    ];
+  }
+}
+
+const mlWindow = new MLFeatureWindow(1.5);
+
+// =============================================================================
+// [Tier 3 / 5.2]  WEBSOCKET TRANSPORT
+// =============================================================================
+//
+// Persistent Socket.IO connection used to ship the 16-feature ML payload
+// to /ws-predict_frame. Server replies with a 'prediction' event. We measure
+// round-trip latency so the UI can show whether WS is genuinely faster than
+// HTTP. A graceful HTTP fallback runs if WS is unavailable or fails to open.
+
+const WSClient = {
+  socket: null,
+  connected: false,
+  pendingSeq: 0,
+  pending: new Map(),         // seq -> { resolve, t_send }
+  onPrediction: null,
+  rttMs: null,                // exponential moving average of round-trip ms
+
+  init() {
+    if (typeof io !== "function") {
+      console.warn("[WS] socket.io client missing - HTTP only");
+      return;
+    }
+    try {
+      this.socket = io({
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionDelay: 2000,
+      });
+      this.socket.on("connect", () => {
+        this.connected = true;
+        const sigT = document.getElementById("sig-transport");
+        if (sigT) { sigT.textContent = "WS"; sigT.className = "s-value active"; }
+        console.log("[WS] connected:", this.socket.id);
+      });
+      this.socket.on("disconnect", () => {
+        this.connected = false;
+        const sigT = document.getElementById("sig-transport");
+        if (sigT) { sigT.textContent = "HTTP"; sigT.className = "s-value"; }
+      });
+      this.socket.on("hello", info => {
+        // server might tell us about model availability
+        if (info && info.ml_model_loaded === false) {
+          console.warn("[WS] server reports ML model NOT loaded");
+        }
+      });
+      this.socket.on("prediction", d => {
+        if (!d) return;
+        const slot = this.pending.get(d.client_seq);
+        if (slot) {
+          this.pending.delete(d.client_seq);
+          const rtt = Date.now() - slot.t_send;
+          this.rttMs = this.rttMs == null ? rtt : 0.7 * this.rttMs + 0.3 * rtt;
+          slot.resolve(d);
+        }
+        if (this.onPrediction) this.onPrediction(d);
+      });
+    } catch (e) {
+      console.warn("[WS] init failed:", e);
+      this.socket = null;
+    }
+  },
+
+  predict(features, ruleScore, fusionWeight) {
+    if (!this.socket || !this.connected) return null;
+    const seq = ++this.pendingSeq;
+    this.socket.emit("predict_frame", {
+      seq,
+      features,
+      rule_score: ruleScore,
+      fusion_w:   fusionWeight,
+    });
+    return new Promise((resolve, reject) => {
+      this.pending.set(seq, { resolve, t_send: Date.now() });
+      // 1s timeout
+      setTimeout(() => {
+        if (this.pending.has(seq)) {
+          this.pending.delete(seq);
+          reject(new Error("ws_timeout"));
+        }
+      }, 1000);
+    });
+  },
+
+  emitTelemetry(payload) {
+    if (this.socket && this.connected) {
+      this.socket.emit("telemetry_frame", payload);
+      return true;
+    }
+    return false;
+  },
+};
+WSClient.init();
+
+const MLClassifier = {
+  available: false,
+  lastProba: null,
+  lastFused: null,
+  inFlight: false,
+  lastCallMs: 0,
+  callIntervalMs: 250,    // tighter throttle on WS (1s on HTTP fallback)
+  fusionWeight: 0.6,      // 60% ML / 40% rule-based  (Tier 1 / 3.1)
+
+  init() {
+    fetch("/api/model/info")
+      .then(r => r.json())
+      .then(info => {
+        this.available = !!info.loaded;
+        if (this.available) {
+          showToast("ML classifier ready  -  late-fusion enabled", "success");
+        } else {
+          showToast("ML classifier unavailable - using rule-based detection only", "warning");
+        }
+      })
+      .catch(() => { this.available = false; });
+  },
+
+  predictMaybe(features, ruleScore, t) {
+    if (!this.available || !features || this.inFlight) return;
+    // WS path can run faster; HTTP fallback gets a 400ms throttle
+    const minInterval = WSClient.connected ? this.callIntervalMs : 400;
+    if (t - this.lastCallMs < minInterval) return;
+    this.lastCallMs = t;
+    this.inFlight = true;
+
+    const onResult = d => {
+      if (d && d.ok) {
+        this.lastProba = d.probability;
+        this.lastFused = d.fused_score !== null && d.fused_score !== undefined
+          ? d.fused_score : d.probability;
+      }
+    };
+
+    if (WSClient.connected) {
+      WSClient.predict(features, ruleScore, this.fusionWeight)
+        .then(onResult)
+        .catch(() => {})
+        .finally(() => { this.inFlight = false; });
+      return;
+    }
+
+    fetch("/api/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        features,
+        rule_score: ruleScore,
+        fusion_w:   this.fusionWeight,
+      }),
+    })
+      .then(r => r.json())
+      .then(onResult)
+      .catch(() => {})
+      .finally(() => { this.inFlight = false; });
+  },
+};
+MLClassifier.init();
+
+// =============================================================================
+// [Tier 2 / 2.3] ADAPTIVE THRESHOLD CALIBRATION
+// =============================================================================
+const Calibration = {
+  active: false,
+  data: null,                 // { baseline, touch, threshold, alpha }
+
+  // Sample the closest hand-face distance over a fixed duration.
+  async sample(durationMs, label) {
+    return new Promise(resolve => {
+      const end = Date.now() + durationMs;
+      const samples = [];
+      const tick = () => {
+        if (detector && typeof detector.smoothDist === "number" && detector.smoothDist < 4) {
+          samples.push(detector.smoothDist);
+        }
+        if (Date.now() >= end) {
+          if (samples.length === 0) return resolve(null);
+          samples.sort((a, b) => a - b);
+          // robust median of best 60% of samples
+          const lo = Math.floor(samples.length * 0.2);
+          const hi = Math.floor(samples.length * 0.8);
+          const slice = samples.slice(lo, Math.max(hi, lo + 1));
+          const m = slice.reduce((s, v) => s + v, 0) / slice.length;
+          resolve(m);
+        } else {
+          requestAnimationFrame(tick);
+        }
+      };
+      tick();
+    });
+  },
+
+  async run(sessionId) {
+    if (this.active) return null;
+    this.active = true;
+    try {
+      const overlay = document.getElementById("calib-overlay");
+      const message = document.getElementById("calib-message");
+      const sub     = document.getElementById("calib-sub");
+      const counter = document.getElementById("calib-counter");
+      overlay.classList.add("show");
+
+      // Step 1 — far baseline
+      message.textContent = "Calibration 1 of 2: hold your hand AWAY from your face";
+      sub.textContent = "Keep your hand visible to the camera but well clear of your face.";
+      for (let s = 3; s > 0; s--) {
+        counter.textContent = s; await new Promise(r => setTimeout(r, 1000));
+      }
+      counter.textContent = "...";
+      const baseline = await this.sample(2500);
+
+      // Step 2 — touching
+      message.textContent = "Calibration 2 of 2: lightly TOUCH your forehead";
+      sub.textContent = "Rest a finger on your forehead so we can measure the touching distance.";
+      for (let s = 3; s > 0; s--) {
+        counter.textContent = s; await new Promise(r => setTimeout(r, 1000));
+      }
+      counter.textContent = "...";
+      const touch = await this.sample(2500);
+
+      overlay.classList.remove("show");
+      this.active = false;
+
+      if (baseline === null || touch === null || baseline <= touch) {
+        showToast("Calibration failed - using default threshold", "warning");
+        return null;
+      }
+
+      const alpha = 0.3;
+      const threshold = touch + alpha * (baseline - touch);
+      this.data = { baseline, touch, threshold, alpha };
+
+      // Apply to detector
+      detector.PROXIMITY_RATIO = threshold;
+
+      // Persist server-side
+      try {
+        await fetch("/api/calibrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            baseline_distance: baseline,
+            touch_distance:    touch,
+            alpha,
+          }),
+        });
+      } catch (e) {}
+
+      showToast(`Calibrated: threshold = ${threshold.toFixed(2)} (touch=${touch.toFixed(2)}, baseline=${baseline.toFixed(2)})`, "success");
+      return this.data;
+    } finally {
+      this.active = false;
+      document.getElementById("calib-overlay").classList.remove("show");
+    }
+  },
+};
+
+// =============================================================================
+// DETECTION ENGINE (v4 - rule + ML late fusion + calibrated threshold)
+// =============================================================================
+
+const FACE = {
+  NOSE_TIP: 1, UPPER_LIP: 13, LOWER_LIP: 14,
+  LEFT_CHEEK: 234, RIGHT_CHEEK: 454, FOREHEAD: 10,
+  CHIN: 152, MOUTH_LEFT: 78, MOUTH_RIGHT: 308,
+};
+
+// =============================================================================
+// [Tier 3 / 2.4]  MULTI-ZONE FACE DETECTION
+// =============================================================================
+//
+// MediaPipe FaceMesh emits 468 landmarks. We map them to 13 anatomically
+// meaningful zones, each represented by the centroid of a small landmark
+// cluster. This greatly improves spatial resolution over the legacy
+// "one landmark per region" scheme - e.g. cheek-stroking can now be told
+// apart from chin-picking. All work happens in the browser; cost is ~0.1ms
+// per frame because we only iterate over ~80 indices total.
+//
+// Indices were chosen by inspecting MediaPipe's face_mesh_indices.txt and
+// pulling the canonical IDs for each anatomical region.
+const FACE_ZONES = {
+  forehead:        { idx: [10, 67, 109, 338, 297, 151], color: "#a78bfa" },
+  left_temple:     { idx: [21, 71, 162, 139, 156],      color: "#22d3ee" },
+  right_temple:    { idx: [251, 301, 389, 368, 383],    color: "#22d3ee" },
+  left_eyebrow:    { idx: [70, 63, 105, 66, 107, 55, 65, 52, 53],     color: "#fbbf24" },
+  right_eyebrow:   { idx: [336, 296, 334, 293, 300, 285, 295, 282, 283], color: "#fbbf24" },
+  nose_bridge:     { idx: [168, 6, 197, 195],          color: "#60a5fa" },
+  nose_tip:        { idx: [1, 4, 5, 19, 94, 2],        color: "#3b82f6" },
+  left_cheek:      { idx: [50, 101, 36, 205, 187, 123, 116, 117, 118, 234], color: "#22c55e" },
+  right_cheek:     { idx: [280, 330, 266, 425, 411, 352, 345, 346, 347, 454], color: "#22c55e" },
+  upper_lip:       { idx: [0, 11, 12, 13, 37, 267, 39, 269, 40, 270],  color: "#ef4444" },
+  lower_lip:       { idx: [14, 15, 16, 17, 84, 314, 86, 316, 87, 317], color: "#ef4444" },
+  chin:            { idx: [152, 175, 396, 369, 377, 148, 176, 140, 171, 199], color: "#ec4899" },
+  jawline_left:    { idx: [172, 136, 150, 149, 176, 132, 58, 215],     color: "#f97316" },
+};
+const FACE_ZONE_NAMES = Object.keys(FACE_ZONES);
+
+// Pre-computed cache of zone centroids per frame (refreshed each frame).
+const ZoneEngine = {
+  centroids: {},
+  faceWidth: 0.1,
+
+  recompute(face) {
+    if (!face || face.length < 468) {
+      this.centroids = {};
+      return;
+    }
+    for (const name of FACE_ZONE_NAMES) {
+      const ids = FACE_ZONES[name].idx;
+      let sx = 0, sy = 0, sz = 0, n = 0;
+      for (const id of ids) {
+        const lm = face[id];
+        if (!lm) continue;
+        sx += lm.x; sy += lm.y; sz += (lm.z || 0); n++;
+      }
+      if (n > 0) this.centroids[name] = { x: sx / n, y: sy / n, z: sz / n };
+    }
+    this.faceWidth = Math.hypot(
+      face[234].x - face[454].x,
+      face[234].y - face[454].y,
+    ) || 0.1;
+  },
+
+  // Distances from a hand point to every zone, normalized by face width.
+  // Returns an object: { zoneName: normDistance }
+  distancesFromPoint(p) {
+    const out = {};
+    if (!p || !this.faceWidth) return out;
+    for (const name of FACE_ZONE_NAMES) {
+      const c = this.centroids[name];
+      if (!c) continue;
+      out[name] = Math.hypot(p.x - c.x, p.y - c.y) / this.faceWidth;
+    }
+    return out;
+  },
+
+  closestZoneTo(p) {
+    let best = null, bestD = Infinity;
+    const dists = this.distancesFromPoint(p);
+    for (const [name, d] of Object.entries(dists)) {
+      if (d < bestD) { bestD = d; best = name; }
+    }
+    return best ? { name: best, distance: bestD } : null;
+  },
+
+  // Returns true if the point is "inside" the given zone (within radius).
+  isInZone(p, zoneName, radius = 0.30) {
+    const c = this.centroids[zoneName];
+    if (!c || !this.faceWidth) return false;
+    return Math.hypot(p.x - c.x, p.y - c.y) / this.faceWidth < radius;
+  },
+};
+
+// Mapping from BFRB type -> closest face zone(s).
+// When multi-zone mode is enabled, _classifyType uses this lookup.
+const BFRB_ZONE_MAP = {
+  "Nail Biting":       ["upper_lip", "lower_lip"],
+  "Lip Picking":       ["upper_lip", "lower_lip"],
+  "Nose Picking":      ["nose_tip"],
+  "Forehead Touching": ["forehead", "left_temple", "right_temple"],
+  "Cheek Touching":    ["left_cheek", "right_cheek"],
+  "Face Touching":     ["nose_tip", "left_cheek", "right_cheek", "chin"],
+  "Hair Pulling":      ["forehead", "left_temple", "right_temple", "left_eyebrow", "right_eyebrow"],
+  "Skin Picking":      ["left_cheek", "right_cheek", "chin", "nose_tip", "jawline_left"],
+};
+
+const HAND = {
+  WRIST: 0, THUMB_IP: 3, THUMB_TIP: 4, INDEX_MCP: 5,
+  INDEX_PIP: 6, INDEX_TIP: 8, MIDDLE_PIP: 10, MIDDLE_TIP: 12,
+  RING_PIP: 14, RING_TIP: 16, PINKY_MCP: 17, PINKY_PIP: 18, PINKY_TIP: 20,
+};
+
+const BFRB_TYPES = [
+  { name: "Nail Biting",       landmarks: [HAND.INDEX_TIP, HAND.THUMB_TIP], face: FACE.UPPER_LIP,  threshold: 0.35 },
+  { name: "Nose Picking",      landmarks: [HAND.INDEX_TIP],                 face: FACE.NOSE_TIP,   threshold: 0.32 },
+  { name: "Face Touching",     landmarks: [HAND.WRIST, HAND.INDEX_TIP],     face: FACE.NOSE_TIP,   threshold: 0.45 },
+  { name: "Forehead Touching", landmarks: [HAND.WRIST, HAND.INDEX_TIP],     face: FACE.FOREHEAD,   threshold: 0.50 },
+  { name: "Cheek Touching",    landmarks: [HAND.INDEX_TIP, HAND.THUMB_TIP], face: FACE.LEFT_CHEEK, threshold: 0.38 },
+  { name: "Lip Picking",       landmarks: [HAND.INDEX_TIP],                 face: FACE.LOWER_LIP,  threshold: 0.32 },
+];
+
+const PINCH_ZONES = [
+  { name: "Hair Pulling",  face: FACE.FOREHEAD,    zone: 0.90 },
+  { name: "Hair Pulling",  face: FACE.LEFT_CHEEK,  zone: 0.85 },
+  { name: "Hair Pulling",  face: FACE.RIGHT_CHEEK, zone: 0.85 },
+  { name: "Skin Picking",  face: FACE.LEFT_CHEEK,  zone: 0.65 },
+  { name: "Skin Picking",  face: FACE.RIGHT_CHEEK, zone: 0.65 },
+  { name: "Skin Picking",  face: FACE.CHIN,        zone: 0.65 },
+  { name: "Skin Picking",  face: FACE.NOSE_TIP,    zone: 0.55 },
+  { name: "Lip Picking",   face: FACE.UPPER_LIP,   zone: 0.45 },
+];
+
+class BFRBDetector {
+  constructor() {
+    // ── PROXIMITY & TIMING (v5 refined) ──
+    // Lowered proximity ratio: hand closer to face before we start tracking
+    this.PROXIMITY_RATIO = 0.40; this.DWELL_MS = 350; this.BFRB_MS = 700;
+    this.EXIT_MS = 450; this.VELOCITY_MAX = 0.12;
+    // Faster EMA for quicker response to real behaviors
+    this.EMA_ALPHA = 0.35; this.EMA_VEL_ALPHA = 0.25;
+
+    this.state = "IDLE"; this.proximityStart = null; this.exitStart = null;
+    this.smoothDist = 1.0; this.smoothVel = 0.0; this.smoothDistances = {};
+    this.prevHandPos = null; this.stateHistory = [];
+
+    this.bfrbFrames = 0; this.totalFrames = 0; this.bfrbEvents = 0; this.lastWasBFRB = false;
+
+    // ── PINCH-PULL (v5 refined — easier to trigger, catches subtler pulls) ──
+    this.PINCH_THRESHOLD = 0.16; this.CLUSTER_THRESHOLD = 0.18; this.PULL_MIN_DIST = 0.18;
+    this.pinchState = "NONE"; this.pinchFaceDist = null; this.pinchZoneLabel = "";
+    this.smoothPinch = 0; this.smoothCluster = 0; this.EMA_PINCH = 0.35;
+    this.pinchPullActive = false; this.pinchPullLabel = ""; this.pinchPullTimer = null;
+    this.PINCH_PULL_HOLD = 1500;
+
+    this.smoothMouthOpen = 0; this.EMA_MOUTH = 0.25; this.MOUTH_OPEN_THRESH = 0.08;
+    this.extendedCount = 0;
+
+    // ── MICRO-MOTION (v5 refined — widened ranges for picking behaviors) ──
+    this.MICRO_WINDOW = 20; this.posHistory = []; this.microVariance = 0; this.microReversals = 0;
+    this.STATIC_VAR_THRESH = 0.000015; this.PICK_VAR_MIN = 0.000020;
+    this.PICK_VAR_MAX = 0.0008; this.REVERSAL_THRESH = 0.25;
+    this.smoothApproachAngle = 1.0;
+
+    this.eatingLikely = false; this.restingLikely = false;
+    this.bfrbScore = 0; this.BFRB_SCORE_THRESH = 0.45;
+
+    // ── v5 NEW: Temporal persistence & confidence boosting ──
+    this.consecutiveBFRBFrames = 0;  // how many frames in a row we've been in BFRB
+    this.recentBFRBCount = 0;        // detections in last 10 seconds
+    this.recentBFRBTimestamps = [];  // timestamps of recent events
+  }
+
+  update(hand, face, timestamp) {
+    this.totalFrames++;
+    if (!hand || !face || face.length < 468) {
+      this._transition("IDLE");
+      this.proximityStart = null; this.exitStart = null; this.prevHandPos = null;
+      this.smoothDist = 1.0; this.smoothVel = 0.0; this.bfrbScore = 0;
+      this.eatingLikely = false; this.restingLikely = false;
+      this.pinchPullActive = false; this.pinchState = "NONE";
+      this.stateHistory.push("idle");
+      if (this.stateHistory.length > 30) this.stateHistory.shift();
+      return this._result(null, null, null);
+    }
+
+    const faceWidth = this._dist(face[FACE.LEFT_CHEEK], face[FACE.RIGHT_CHEEK]);
+    if (faceWidth < 0.01) return this._result(null, null, null);
+
+    const proximityDistances = this._computeProximityDistances(hand, face, faceWidth);
+    const rawMin = Math.min(...Object.values(proximityDistances));
+    this.smoothDist = this.EMA_ALPHA * rawMin + (1 - this.EMA_ALPHA) * this.smoothDist;
+
+    for (const [key, val] of Object.entries(proximityDistances)) {
+      if (!(key in this.smoothDistances)) this.smoothDistances[key] = 1.0;
+      this.smoothDistances[key] = this.EMA_ALPHA * val + (1 - this.EMA_ALPHA) * this.smoothDistances[key];
+    }
+
+    let rawVel = 0;
+    if (this.prevHandPos) rawVel = this._dist(hand[HAND.WRIST], this.prevHandPos);
+    this.smoothVel = this.EMA_VEL_ALPHA * rawVel + (1 - this.EMA_VEL_ALPHA) * this.smoothVel;
+    this.prevHandPos = { x: hand[HAND.WRIST].x, y: hand[HAND.WRIST].y };
+
+    const rawPinch = this._getPinchStrength(hand, faceWidth);
+    const rawCluster = this._getClusterStrength(hand, faceWidth);
+    this.smoothPinch = this.EMA_PINCH * rawPinch + (1 - this.EMA_PINCH) * this.smoothPinch;
+    this.smoothCluster = this.EMA_PINCH * rawCluster + (1 - this.EMA_PINCH) * this.smoothCluster;
+    const isPinched = this.smoothPinch > this.PINCH_THRESHOLD;
+    const isClustered = this.smoothCluster > this.CLUSTER_THRESHOLD;
+
+    const mouth = this._getMouthAperture(face, faceWidth);
+    this.smoothMouthOpen = this.EMA_MOUTH * mouth.mouthOpen + (1 - this.EMA_MOUTH) * this.smoothMouthOpen;
+    const mouthIsOpen = this.smoothMouthOpen > this.MOUTH_OPEN_THRESH;
+
+    this.extendedCount = this._getExtendedFingerCount(hand);
+    const isOpenPalm = this.extendedCount >= 4;
+
+    this._updateMicroMotion(hand);
+    const isStaticRest = this.microVariance < this.STATIC_VAR_THRESH && this.microReversals < 0.15;
+    const isMicroOscillating = this.microVariance > this.PICK_VAR_MIN
+                            && this.microVariance < this.PICK_VAR_MAX
+                            && this.microReversals > this.REVERSAL_THRESH;
+
+    const approachAngle = this._getApproachAngle(hand, face);
+    this.smoothApproachAngle = 0.3 * approachAngle + 0.7 * this.smoothApproachAngle;
+    const fingertipsAtFace = this.smoothApproachAngle < 0.6;
+
+    const wristBelowMouth = hand[HAND.WRIST].y > face[FACE.UPPER_LIP].y;
+    const handNearMouth = (this._dist(hand[HAND.INDEX_TIP], face[FACE.UPPER_LIP]) / faceWidth) < 0.30;
+    // v5: stricter eating detection — require mouth WIDE open + hand approaching from below
+    // This prevents nail biting near mouth from being classified as eating
+    const mouthWideOpen = this.smoothMouthOpen > this.MOUTH_OPEN_THRESH * 1.5;
+    this.eatingLikely = mouthWideOpen && handNearMouth && wristBelowMouth && isOpenPalm;
+    // v5: stricter resting — require truly static AND open palm AND no recent BFRB context
+    this.restingLikely = isStaticRest && isOpenPalm && !isPinched && !isClustered
+                       && this.recentBFRBCount === 0;
+
+    const isClose = this.smoothDist < this.PROXIMITY_RATIO;
+    const isSlow = this.smoothVel < this.VELOCITY_MAX;
+
+    // v5: Track recent BFRB events for temporal context
+    this.recentBFRBTimestamps = this.recentBFRBTimestamps.filter(t => timestamp - t < 10000);
+    this.recentBFRBCount = this.recentBFRBTimestamps.length;
+
+    this.bfrbScore = this._computeBFRBScore({
+      proximity: isClose,
+      proximityStrength: Math.max(0, 1 - this.smoothDist / this.PROXIMITY_RATIO), // graduated
+      dwellTime: this.proximityStart && (timestamp - this.proximityStart) > this.DWELL_MS,
+      fingerCurl: this.extendedCount <= 2,
+      pinchStrength: isPinched || isClustered,
+      microOscillation: isMicroOscillating,
+      notEating: !this.eatingLikely,
+      notResting: !this.restingLikely,
+      palmOrientation: fingertipsAtFace,
+      recentHistory: this.recentBFRBCount > 0, // boost if recent detections exist
+      velocitySlow: isSlow,
+    });
+
+    // Pinch-pull state machine
+    if (!this.pinchPullActive) {
+      switch (this.pinchState) {
+        case "NONE":
+          if (isPinched || isClustered) {
+            const zone = this._nearestPinchZone(hand, face, faceWidth);
+            if (zone) {
+              this.pinchState = "PINCHED";
+              this.pinchFaceDist = this.smoothDist;
+              this.pinchZoneLabel = zone;
+            }
+          }
+          break;
+        case "PINCHED":
+          if (!isPinched && !isClustered) {
+            this.pinchState = "NONE"; this.pinchFaceDist = null; this.pinchZoneLabel = "";
+          } else {
+            const pullDist = this.smoothDist - this.pinchFaceDist;
+            if (pullDist > this.PULL_MIN_DIST) {
+              this.pinchPullActive = true; this.pinchPullLabel = this.pinchZoneLabel;
+              this.pinchPullTimer = timestamp; this.bfrbEvents++;
+              this.pinchState = "NONE"; this.pinchFaceDist = null;
+            }
+          }
+          break;
+      }
+    } else {
+      if (timestamp - this.pinchPullTimer > this.PINCH_PULL_HOLD) {
+        this.pinchPullActive = false; this.pinchPullLabel = ""; this.pinchPullTimer = null;
+      }
+    }
+
+    const bfrbType = this.pinchPullActive
+      ? this.pinchPullLabel
+      : this._classifyType(hand, face, faceWidth);
+
+    // State machine (v5 refined — faster detection, temporal persistence)
+    // Adaptive threshold: if user has recent detections, slightly lower the bar
+    // (people tend to repeat BFRBs in bursts)
+    const adaptiveThresh = this.recentBFRBCount > 2
+      ? this.BFRB_SCORE_THRESH * 0.85
+      : this.BFRB_SCORE_THRESH;
+
+    switch (this.state) {
+      case "IDLE":
+        if (isClose) { this.state = "PROXIMITY"; this.proximityStart = timestamp; this.exitStart = null; }
+        break;
+      case "PROXIMITY":
+        if (!isClose) { this.state = "IDLE"; this.proximityStart = null; }
+        else if (timestamp - this.proximityStart >= this.DWELL_MS) this.state = "DWELL";
+        break;
+      case "DWELL":
+        if (!isClose) { this.state = "IDLE"; this.proximityStart = null; }
+        else if (timestamp - this.proximityStart >= this.BFRB_MS
+                 && this.bfrbScore >= adaptiveThresh
+                 && !this.eatingLikely && !this.restingLikely) {
+          // v5: removed strict isSlow check — some BFRBs (picking/scratching) have motion
+          this.state = "BFRB";
+          if (!this.lastWasBFRB) {
+            this.bfrbEvents++;
+            this.recentBFRBTimestamps.push(timestamp);
+          }
+        }
+        break;
+      case "BFRB":
+        if (this.eatingLikely || this.restingLikely) { this.state = "DWELL"; this.exitStart = null; this.consecutiveBFRBFrames = 0; }
+        else if (!isClose) {
+          if (!this.exitStart) this.exitStart = timestamp;
+          // v5: longer exit grace period so brief hand shifts don't kill detection
+          if (timestamp - this.exitStart >= this.EXIT_MS) {
+            this.state = "IDLE"; this.proximityStart = null; this.exitStart = null;
+            this.consecutiveBFRBFrames = 0;
+          }
+        } else {
+          this.exitStart = null;
+          this.consecutiveBFRBFrames++;
+          // v5: harder to exit once established (must drop significantly)
+          if (this.bfrbScore < adaptiveThresh * 0.65) this.state = "DWELL";
+        }
+        break;
+    }
+
+    const isBFRB = this.state === "BFRB" || this.pinchPullActive;
+    if (isBFRB) this.bfrbFrames++;
+    this.lastWasBFRB = isBFRB;
+
+    const histState = this.pinchPullActive ? "bfrb"
+                    : this.pinchState === "PINCHED" ? "pinch"
+                    : this.state.toLowerCase();
+    this.stateHistory.push(histState);
+    if (this.stateHistory.length > 30) this.stateHistory.shift();
+
+    // v5: Improved confidence — combines time, score, and persistence
+    let confidence = 0;
+    if (this.state === "BFRB") {
+      const timeConf = Math.min(1.0, (timestamp - this.proximityStart) / (this.BFRB_MS * 1.2));
+      const scoreConf = Math.min(1.0, this.bfrbScore / 0.8);
+      const persistConf = Math.min(1.0, this.consecutiveBFRBFrames / 30); // builds over 1s
+      confidence = 0.4 * timeConf + 0.35 * scoreConf + 0.25 * persistConf;
+    } else if (this.state === "DWELL") {
+      confidence = Math.min(0.65, (timestamp - this.proximityStart - this.DWELL_MS) / (this.BFRB_MS - this.DWELL_MS) * 0.65);
+    } else if (this.state === "PROXIMITY") {
+      confidence = Math.min(0.3, (timestamp - this.proximityStart) / this.DWELL_MS * 0.3);
+    }
+
+    let dwellProgress = 0;
+    if (this.proximityStart) dwellProgress = Math.min(1.0, (timestamp - this.proximityStart) / this.BFRB_MS);
+
+    return this._result(bfrbType, confidence, dwellProgress, { ...proximityDistances });
+  }
+
+  _computeProximityDistances(hand, face, faceWidth) {
+    const n = (a, b) => this._dist(a, b) / faceWidth;
+    const useZones = (document.getElementById("chk-zones") || {}).checked !== false;
+
+    if (useZones && Object.keys(ZoneEngine.centroids).length > 0) {
+      // [Tier 3 / 2.4] Multi-zone proximity: compute distance from key hand
+      // points to every face zone centroid, then expose the most informative
+      // ones for the live UI bars.
+      const idx   = hand[HAND.INDEX_TIP];
+      const wrist = hand[HAND.WRIST];
+      const grab  = { x: (hand[4].x + hand[8].x) / 2, y: (hand[4].y + hand[8].y) / 2 };
+      return {
+        "Index->Forehead":    Math.hypot(idx.x - ZoneEngine.centroids.forehead.x,    idx.y - ZoneEngine.centroids.forehead.y)    / faceWidth,
+        "Index->NoseTip":     Math.hypot(idx.x - ZoneEngine.centroids.nose_tip.x,    idx.y - ZoneEngine.centroids.nose_tip.y)    / faceWidth,
+        "Index->UpperLip":    Math.hypot(idx.x - ZoneEngine.centroids.upper_lip.x,   idx.y - ZoneEngine.centroids.upper_lip.y)   / faceWidth,
+        "Index->LeftCheek":   Math.hypot(idx.x - ZoneEngine.centroids.left_cheek.x,  idx.y - ZoneEngine.centroids.left_cheek.y)  / faceWidth,
+        "Index->RightCheek":  Math.hypot(idx.x - ZoneEngine.centroids.right_cheek.x, idx.y - ZoneEngine.centroids.right_cheek.y) / faceWidth,
+        "Index->Chin":        Math.hypot(idx.x - ZoneEngine.centroids.chin.x,        idx.y - ZoneEngine.centroids.chin.y)        / faceWidth,
+        "Wrist->NoseTip":     Math.hypot(wrist.x - ZoneEngine.centroids.nose_tip.x,  wrist.y - ZoneEngine.centroids.nose_tip.y)  / faceWidth,
+        "Grab->Forehead":     Math.hypot(grab.x - ZoneEngine.centroids.forehead.x,   grab.y - ZoneEngine.centroids.forehead.y)   / faceWidth,
+      };
+    }
+
+    return {
+      "Wrist->Nose":   n(hand[HAND.WRIST], face[FACE.NOSE_TIP]),
+      "Index->Mouth":  n(hand[HAND.INDEX_TIP], face[FACE.UPPER_LIP]),
+      "Index->Nose":   n(hand[HAND.INDEX_TIP], face[FACE.NOSE_TIP]),
+      "Index->Cheek":  n(hand[HAND.INDEX_TIP], face[FACE.LEFT_CHEEK]),
+      "Grab->Forehead": n({x:(hand[4].x+hand[8].x)/2, y:(hand[4].y+hand[8].y)/2}, face[FACE.FOREHEAD]),
+    };
+  }
+
+  _getPinchStrength(hand, fw) {
+    const d_ti = this._dist(hand[HAND.THUMB_TIP], hand[HAND.INDEX_TIP]) / fw;
+    const d_tm = this._dist(hand[HAND.THUMB_TIP], hand[HAND.MIDDLE_TIP]) / fw;
+    return Math.max(0, Math.min(1, 1 - (Math.min(d_ti, d_tm) - 0.05) / 0.30));
+  }
+
+  _getClusterStrength(hand, fw) {
+    const tips = [hand[HAND.THUMB_TIP], hand[HAND.INDEX_TIP], hand[HAND.MIDDLE_TIP], hand[HAND.RING_TIP], hand[HAND.PINKY_TIP]];
+    const cx = tips.reduce((s, t) => s + t.x, 0) / 5;
+    const cy = tips.reduce((s, t) => s + t.y, 0) / 5;
+    const spread = tips.reduce((s, t) => s + this._dist(t, {x:cx, y:cy}), 0) / 5 / fw;
+    return Math.max(0, Math.min(1, 1 - (spread - 0.04) / 0.21));
+  }
+
+  _nearestPinchZone(hand, face, fw) {
+    const gx = (hand[HAND.INDEX_TIP].x + hand[HAND.THUMB_TIP].x) / 2;
+    const gy = (hand[HAND.INDEX_TIP].y + hand[HAND.THUMB_TIP].y) / 2;
+    for (const z of PINCH_ZONES) {
+      if (this._dist({x:gx,y:gy}, face[z.face]) / fw < z.zone) return z.name;
+    }
+    return null;
+  }
+
+  _classifyType(hand, face, fw) {
+    const useZones = (document.getElementById("chk-zones") || {}).checked !== false;
+
+    // Try the multi-zone classifier first
+    if (useZones && Object.keys(ZoneEngine.centroids).length > 0) {
+      const idx = hand[HAND.INDEX_TIP];
+      const thb = hand[HAND.THUMB_TIP];
+      const wrist = hand[HAND.WRIST];
+      let bestName = null, bestNorm = Infinity;
+      const ZONE_THRESHOLDS = {
+        "Nail Biting": 0.35, "Lip Picking": 0.35, "Nose Picking": 0.32,
+        "Forehead Touching": 0.50, "Cheek Touching": 0.40, "Face Touching": 0.45,
+        "Hair Pulling": 0.50, "Skin Picking": 0.38,
+      };
+      for (const [bfrb, zones] of Object.entries(BFRB_ZONE_MAP)) {
+        if (!APP.selectedTypes.has(bfrb)) continue;
+        const thresh = ZONE_THRESHOLDS[bfrb] || 0.35;
+        for (const z of zones) {
+          const c = ZoneEngine.centroids[z];
+          if (!c) continue;
+          // pick the most relevant hand point per zone
+          const probe = (z === "forehead" || z.includes("temple")
+                         || z === "left_eyebrow" || z === "right_eyebrow")
+                        ? { x: (idx.x + thb.x) / 2, y: (idx.y + thb.y) / 2 }
+                        : (z === "nose_tip" ? idx
+                           : (z.includes("lip") ? idx
+                              : idx));
+          const d = Math.hypot(probe.x - c.x, probe.y - c.y) / fw;
+          if (d < thresh && d < bestNorm) {
+            bestNorm = d; bestName = bfrb;
+          }
+        }
+      }
+      if (bestName) return bestName;
+    }
+
+    // Legacy single-landmark classifier (fallback / non-zone mode)
+    let best = null, bestDist = Infinity;
+    for (const t of BFRB_TYPES) {
+      if (!APP.selectedTypes.has(t.name)) continue;
+      for (const lm of t.landmarks) {
+        const d = this._dist(hand[lm], face[t.face]) / fw;
+        if (d < bestDist) { bestDist = d; if (d < t.threshold) best = t.name; }
+      }
+    }
+    return best;
+  }
+
+  _getMouthAperture(face, fw) {
+    return {
+      mouthOpen: this._dist(face[FACE.UPPER_LIP], face[FACE.LOWER_LIP]) / fw,
+      mouthWidth: this._dist(face[FACE.MOUTH_LEFT], face[FACE.MOUTH_RIGHT]) / fw,
+    };
+  }
+
+  _getExtendedFingerCount(hand) {
+    const d = (a, b) => this._dist(a, b);
+    return [
+      d(hand[HAND.THUMB_TIP], hand[HAND.INDEX_MCP]) > d(hand[HAND.THUMB_IP], hand[HAND.INDEX_MCP]) * 1.2,
+      d(hand[HAND.INDEX_TIP], hand[HAND.WRIST]) > d(hand[HAND.INDEX_PIP], hand[HAND.WRIST]),
+      d(hand[HAND.MIDDLE_TIP], hand[HAND.WRIST]) > d(hand[HAND.MIDDLE_PIP], hand[HAND.WRIST]),
+      d(hand[HAND.RING_TIP], hand[HAND.WRIST]) > d(hand[HAND.RING_PIP], hand[HAND.WRIST]),
+      d(hand[HAND.PINKY_TIP], hand[HAND.WRIST]) > d(hand[HAND.PINKY_PIP], hand[HAND.WRIST]),
+    ].filter(Boolean).length;
+  }
+
+  _updateMicroMotion(hand) {
+    this.posHistory.push({ x: hand[HAND.INDEX_TIP].x, y: hand[HAND.INDEX_TIP].y });
+    if (this.posHistory.length > this.MICRO_WINDOW) this.posHistory.shift();
+    if (this.posHistory.length < 5) return;
+    const mx = this.posHistory.reduce((s, p) => s + p.x, 0) / this.posHistory.length;
+    const my = this.posHistory.reduce((s, p) => s + p.y, 0) / this.posHistory.length;
+    this.microVariance = this.posHistory.reduce((s, p) => s + (p.x-mx)**2 + (p.y-my)**2, 0) / this.posHistory.length;
+    let rev = 0;
+    for (let i = 2; i < this.posHistory.length; i++) {
+      const dx1 = this.posHistory[i-1].x - this.posHistory[i-2].x;
+      const dx2 = this.posHistory[i].x - this.posHistory[i-1].x;
+      const dy1 = this.posHistory[i-1].y - this.posHistory[i-2].y;
+      const dy2 = this.posHistory[i].y - this.posHistory[i-1].y;
+      if (dx1*dx2 < 0 || dy1*dy2 < 0) rev++;
+    }
+    this.microReversals = rev / (this.posHistory.length - 2);
+  }
+
+  _getApproachAngle(hand, face) {
+    const fd = { x: hand[HAND.MIDDLE_TIP].x - hand[HAND.WRIST].x, y: hand[HAND.MIDDLE_TIP].y - hand[HAND.WRIST].y };
+    const nd = { x: face[FACE.NOSE_TIP].x - hand[HAND.WRIST].x, y: face[FACE.NOSE_TIP].y - hand[HAND.WRIST].y };
+    const dot = fd.x*nd.x + fd.y*nd.y;
+    const m1 = Math.sqrt(fd.x**2+fd.y**2), m2 = Math.sqrt(nd.x**2+nd.y**2);
+    return Math.acos(Math.max(-1, Math.min(1, dot / (m1*m2+1e-8))));
+  }
+
+  _computeBFRBScore(s) {
+    // v5 refined weights — proximity and dwell are primary drivers,
+    // micro-oscillation and finger curl are strong secondary signals,
+    // eating/resting are hard negatives (high weight blockers)
+    const w = {
+      proximity: .12,          // binary: is hand close?
+      proximityStrength: .10,  // graduated: HOW close (0-1)
+      dwellTime: .14,          // has it been there long enough?
+      fingerCurl: .10,         // curled fingers = manipulating
+      pinchStrength: .11,      // pinch/cluster = pulling/picking
+      microOscillation: .10,   // repetitive motion signal
+      notEating: .13,          // MUST not be eating (hard negative)
+      notResting: .08,         // MUST not be resting
+      palmOrientation: .04,    // fingertips aimed at face
+      recentHistory: .04,      // temporal boost from recent events
+      velocitySlow: .04,       // gentle motion (but not required)
+    };
+    let score = 0;
+    for (const k in w) {
+      if (k === "proximityStrength") {
+        score += w[k] * (s[k] || 0); // continuous 0-1
+      } else if (s[k]) {
+        score += w[k]; // boolean
+      }
+    }
+    return score;
+  }
+
+  _dist(a, b) { return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2); }
+  _transition(s) { if (this.state !== s) this.state = s; }
+
+  _result(bfrbType, confidence, dwellProgress, distances) {
+    const isBFRB = this.state === "BFRB" || this.pinchPullActive;
+    return {
+      state: isBFRB ? "BFRB" : this.state,
+      bfrbType: bfrbType || "",
+      confidence: this.pinchPullActive ? 1.0 : (confidence || 0),
+      dwellProgress: dwellProgress || 0,
+      isBFRB, isPinchPull: this.pinchPullActive,
+      pinchStrength: this.smoothPinch, clusterStrength: this.smoothCluster,
+      pinchState: this.pinchState,
+      distances: distances || {},
+      smoothDist: this.smoothDist, smoothVel: this.smoothVel,
+      bfrbScore: this.bfrbScore,
+      eatingLikely: this.eatingLikely, restingLikely: this.restingLikely,
+      extendedCount: this.extendedCount, mouthOpen: this.smoothMouthOpen,
+      stateHistory: [...this.stateHistory],
+      stats: {
+        totalFrames: this.totalFrames, bfrbFrames: this.bfrbFrames,
+        bfrbEvents: this.bfrbEvents,
+        bfrbPct: this.totalFrames > 0 ? (this.bfrbFrames / this.totalFrames * 100).toFixed(0) : 0,
+      },
+    };
+  }
+}
+
+// =============================================================================
+// UI UPDATE
+// =============================================================================
+const detector = new BFRBDetector();
+let fpsCounter = 0, lastFpsTime = Date.now();
+let lastDetectionLogId = 0;
+
+function updateUI(result) {
+  const s = result.state;
+  const isBFRB = result.isBFRB;
+
+  // Border flash
+  const bf = document.getElementById("border-flash");
+  bf.className = "border-flash" + (isBFRB ? " bfrb" : s === "DWELL" || s === "PROXIMITY" ? " suspicious" : "");
+
+  // State badge
+  const badge = document.getElementById("state-badge");
+  let badgeText, badgeClass;
+  if (result.isPinchPull) { badgeText = "PINCH-PULL: " + (result.bfrbType || "BFRB"); badgeClass = "bfrb"; }
+  else if (result.eatingLikely) { badgeText = "Eating (filtered)"; badgeClass = "eating"; }
+  else if (result.restingLikely && (s === "DWELL" || s === "PROXIMITY")) { badgeText = "Resting (filtered)"; badgeClass = "resting"; }
+  else {
+    badgeText = { IDLE:"No BFRB", PROXIMITY:"Hand Near Face", DWELL:"Hand Lingering...", BFRB:"BFRB DETECTED" }[s] || s;
+    badgeClass = s.toLowerCase();
+  }
+  badge.className = "state-badge " + badgeClass;
+  badge.textContent = badgeText;
+
+  // Dwell bar
+  const dwellWrap = document.getElementById("dwell-wrap");
+  const dwellFill = document.getElementById("dwell-fill");
+  const dwellLabel = document.getElementById("dwell-label");
+  if (s === "IDLE") { dwellWrap.classList.remove("visible"); }
+  else {
+    dwellWrap.classList.add("visible");
+    const pct = (result.dwellProgress * 100).toFixed(0);
+    dwellFill.style.width = pct + "%";
+    dwellFill.style.background = isBFRB ? "var(--danger)" : s === "DWELL" ? "#ea580c" : "var(--warning)";
+    dwellLabel.textContent = result.isPinchPull ? (result.bfrbType || "Pinch-Pull")
+                           : result.pinchState === "PINCHED" ? "Pinch detected - pull to confirm"
+                           : "Dwell: " + pct + "%";
+  }
+
+  // BFRB type overlay
+  const typeOverlay = document.getElementById("bfrb-type-overlay");
+  if (isBFRB && result.bfrbType) { typeOverlay.textContent = result.bfrbType; typeOverlay.classList.add("visible"); }
+  else typeOverlay.classList.remove("visible");
+
+  // Detection status
+  const predLabel = document.getElementById("pred-label");
+  const typeLabel = document.getElementById("bfrb-type-label");
+  predLabel.className = "pred-label " + (isBFRB ? "bfrb" : s !== "IDLE" ? "no-bfrb" : "waiting");
+  predLabel.textContent = isBFRB ? "BFRB Detected" : s === "DWELL" ? "Possible BFRB..." : s === "PROXIMITY" ? "Hand Near Face" : "No BFRB";
+  typeLabel.textContent = isBFRB && result.bfrbType ? result.bfrbType : "";
+
+  // Confidence
+  const confPct = (result.confidence * 100).toFixed(0);
+  document.getElementById("conf-text").textContent = confPct + "%";
+  const fill = document.getElementById("conf-fill");
+  fill.style.width = confPct + "%";
+  fill.className = "conf-fill" + (isBFRB ? " high" : result.confidence > 0.3 ? " med" : " low");
+
+  // Status badge
+  const statusBadge = document.getElementById("status-badge");
+  statusBadge.textContent = isBFRB ? "BFRB!" : "Monitoring";
+  statusBadge.className = "badge " + (isBFRB ? "badge-live" : "badge-info");
+
+  // Signals
+  const sigMouth = document.getElementById("sig-mouth");
+  sigMouth.textContent = result.mouthOpen > 0.07 ? "Open" : "Closed";
+  sigMouth.className = "s-value " + (result.eatingLikely ? "active" : "ok");
+  document.getElementById("sig-fingers").textContent = result.extendedCount + "/5";
+  const sigEating = document.getElementById("sig-eating");
+  sigEating.textContent = result.eatingLikely ? "EATING" : "No";
+  sigEating.className = "s-value " + (result.eatingLikely ? "active" : "ok");
+  const sigResting = document.getElementById("sig-resting");
+  sigResting.textContent = result.restingLikely ? "RESTING" : "No";
+  sigResting.className = "s-value " + (result.restingLikely ? "active" : "ok");
+
+  // Stats row
+  document.getElementById("stat-detections").textContent = result.stats.bfrbEvents;
+  document.getElementById("stat-pct").textContent = result.stats.bfrbPct + "%";
+  const scoreEl = document.getElementById("stat-score");
+  scoreEl.textContent = (result.bfrbScore * 100).toFixed(0) + "%";
+  scoreEl.className = "stat-value" + (isBFRB ? " danger" : "");
+
+  // [Tier 1 / 2.2 + Tier 2 / 2.5] ML score, hand pose, fused score
+  const sigMl = document.getElementById("sig-mlscore");
+  if (result.mlScore != null) {
+    sigMl.textContent = (result.mlScore * 100).toFixed(0) + "%";
+    sigMl.className = "s-value " + (result.mlScore >= 0.5 ? "active" : "ok");
+  } else {
+    sigMl.textContent = MLClassifier.available ? "..." : "off";
+    sigMl.className = "s-value";
+  }
+  const sigFused = document.getElementById("sig-fused");
+  if (result.fusedScore != null) {
+    sigFused.textContent = (result.fusedScore * 100).toFixed(0) + "%";
+    sigFused.className = "s-value " + (result.fusedScore >= 0.5 ? "active" : "ok");
+  } else {
+    sigFused.textContent = "--";
+    sigFused.className = "s-value";
+  }
+  const sigPose = document.getElementById("sig-handpose");
+  sigPose.textContent = (result.handPose || "--").replace("_", " ");
+  sigPose.className = "s-value " +
+    (result.handPose === "pinch_grip" ? "active" : (result.handPose === "open_hand" ? "ok" : ""));
+
+  // [Tier 3 / 2.4] Multi-zone face detection signal
+  const sigZone = document.getElementById("sig-zone");
+  if (sigZone) {
+    if (result.closestZone) {
+      sigZone.textContent = result.closestZone.name.replace(/_/g, " ");
+      sigZone.className = "s-value " + (result.closestZone.distance < 0.35 ? "active" : "");
+      sigZone.title = `distance = ${result.closestZone.distance.toFixed(2)} (face widths)`;
+    } else {
+      sigZone.textContent = "--"; sigZone.className = "s-value";
+    }
+  }
+  // Update WS transport indicator (RTT)
+  const sigT = document.getElementById("sig-transport");
+  if (sigT && WSClient.connected) {
+    sigT.textContent = "WS" + (WSClient.rttMs ? ` ${Math.round(WSClient.rttMs)}ms` : "");
+  }
+
+  // FPS
+  fpsCounter++;
+  const now = Date.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById("stat-fps").textContent = fpsCounter;
+    fpsCounter = 0; lastFpsTime = now;
+  }
+
+  updateDistBars(result.distances);
+  updateStateHistory(result.stateHistory);
+
+  // === LOG DETECTION TO DATABASE ===
+  // [Tier 1 / 3.1] late-fusion gate: a BFRB event fires when EITHER
+  //   (a) the rule-based engine declares BFRB, OR
+  //   (b) the ML classifier's fused score is high (>=0.65)
+  const fusedTrigger = result.fusedScore != null && result.fusedScore >= 0.65;
+  const shouldLog = (isBFRB || fusedTrigger) && result.bfrbType
+                  && APP.sessionActive && !APP.detectionCooldown;
+
+  if (shouldLog) {
+    // Check if this type is selected
+    if (APP.selectedTypes.has(result.bfrbType)) {
+      APP.detectionCooldown = true;
+      const timestampMs = APP.sessionStartTime ? Date.now() - APP.sessionStartTime : 0;
+
+      fetch("/api/detections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: APP.sessionId,
+          bfrb_type: result.bfrbType,
+          frame_number: result.stats.totalFrames,
+          timestamp_ms: timestampMs,
+          confidence_score: result.fusedScore != null ? result.fusedScore : result.confidence,
+          smoothed_distance: result.smoothDist,
+          bfrb_score: result.bfrbScore,
+          ml_score:    result.mlScore,
+          fused_score: result.fusedScore,
+          hand_pose:   result.handPose,
+        }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        addDetectionLog(result.bfrbType, result.confidence);
+        APP.sessionDetections.push({
+          id: data.id,
+          type: result.bfrbType,
+          confidence: result.confidence,
+          timestamp_ms: timestampMs,
+        });
+
+        // Show notification
+        showBFRBNotification(result.bfrbType, result.confidence, data.id);
+      })
+      .catch(() => {});
+
+      // Cooldown to prevent spam (3 seconds between DB writes)
+      setTimeout(() => { APP.detectionCooldown = false; }, 3000);
+    }
+  }
+}
+
+function updateDistBars(distances) {
+  const container = document.getElementById("dist-list");
+  if (container.children.length === 0) {
+    Object.keys(distances).forEach(name => {
+      const div = document.createElement("div");
+      div.className = "dist-item";
+      const key = name.replace(/[^a-z0-9]/gi, '_');
+      div.innerHTML = `<div class="dist-head"><span>${name}</span><span id="dv-${key}">&mdash;</span></div>
+                        <div class="dist-track"><div class="dist-fill" id="db-${key}" style="width:0%"></div></div>`;
+      container.appendChild(div);
+    });
+  }
+  for (const [name, val] of Object.entries(distances)) {
+    const key = name.replace(/[^a-z0-9]/gi, '_');
+    const vEl = document.getElementById("dv-" + key);
+    const bEl = document.getElementById("db-" + key);
+    if (!vEl || !bEl) continue;
+    vEl.textContent = val.toFixed(3);
+    const pct = Math.min(val * 80, 100);
+    const hue = Math.round(pct * 1.4);
+    bEl.style.width = Math.max(4, 100 - pct) + "%";
+    bEl.style.background = `hsl(${hue}, 70%, 50%)`;
+  }
+}
+
+function updateStateHistory(history) {
+  const container = document.getElementById("state-history");
+  if (container.children.length !== 30) {
+    container.innerHTML = "";
+    for (let i = 0; i < 30; i++) {
+      const d = document.createElement("div");
+      d.className = "sdot idle";
+      container.appendChild(d);
+    }
+  }
+  const dots = container.children;
+  history.forEach((state, i) => { if (dots[i]) dots[i].className = "sdot " + (state || "idle"); });
+}
+
+function addDetectionLog(type, confidence) {
+  const log = document.getElementById("det-log");
+  const entry = document.createElement("div");
+  entry.className = "det-entry";
+  const isHigh = confidence > 0.7;
+  const time = new Date().toLocaleTimeString();
+  entry.innerHTML = `<div class="det-dot ${isHigh ? 'high' : 'med'}"></div>
+    <div class="det-body"><div class="det-name">${type}</div><div class="det-time">${time}</div></div>
+    <div class="det-conf" style="color:${isHigh ? 'var(--danger)' : 'var(--warning)'}">${(confidence*100).toFixed(0)}%</div>`;
+  log.prepend(entry);
+  while (log.children.length > 20) log.removeChild(log.lastChild);
+}
+
+function updateAccuracyDisplay() {
+  const el = document.getElementById("stat-accuracy");
+  if (APP.feedbackStats.total > 0) {
+    el.textContent = Math.round(APP.feedbackStats.accurate / APP.feedbackStats.total * 100) + "%";
+  }
+}
+
+// =============================================================================
+// HUD CHARTS
+// =============================================================================
+const chartColors = {
+  primary: '#1a3a5c', danger: '#d9534f', success: '#2e8b57',
+  warning: '#d4880f', info: '#2a6cb6', purple: '#6b4c9a',
+  pink: '#c4507a', cyan: '#1a8a8a',
+};
+
+function loadHUDData() {
+  Promise.all([
+    fetch("/api/stats/overview").then(r => r.json()),
+    fetch("/api/stats/daily").then(r => r.json()),
+  ]).then(([overview, daily]) => {
+    // Update stat cards
+    document.getElementById("hud-total-sessions").textContent = overview.total_sessions;
+    document.getElementById("hud-total-detections").textContent = overview.total_detections;
+    document.getElementById("hud-accuracy").textContent = overview.accuracy_rate + "%";
+    document.getElementById("hud-feedback-count").textContent = overview.total_feedback;
+
+    // Daily chart
+    buildDailyChart(daily);
+    // Type chart
+    buildTypeChart(overview.by_type);
+    // Timeline chart (current session)
+    buildTimelineChart();
+    // Accuracy chart
+    buildAccuracyChart(overview.by_type);
+  }).catch(() => {});
+}
+
+function buildDailyChart(daily) {
+  const ctx = document.getElementById("chart-daily");
+  if (APP.charts.daily) APP.charts.daily.destroy();
+
+  APP.charts.daily = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: daily.map(d => d.date),
+      datasets: [{
+        label: "Detections",
+        data: daily.map(d => d.detections),
+        backgroundColor: chartColors.primary + "99",
+        borderColor: chartColors.primary,
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: "#c9d3df" }, ticks: { color: "#5a6a7e", font: { size: 10 } } },
+        y: { grid: { color: "#c9d3df" }, ticks: { color: "#5a6a7e" }, beginAtZero: true },
+      }
+    }
+  });
+}
+
+function buildTypeChart(byType) {
+  const ctx = document.getElementById("chart-types");
+  if (APP.charts.types) APP.charts.types.destroy();
+
+  const colors = [chartColors.danger, chartColors.warning, chartColors.primary,
+                  chartColors.success, chartColors.purple, chartColors.pink,
+                  chartColors.cyan, chartColors.info];
+
+  APP.charts.types = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: byType.map(t => t.bfrb_type),
+      datasets: [{
+        data: byType.map(t => t.count),
+        backgroundColor: colors.slice(0, byType.length),
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "right", labels: { color: "#1a2332", font: { size: 11 }, padding: 12 } },
+      }
+    }
+  });
+}
+
+function buildTimelineChart() {
+  const ctx = document.getElementById("chart-timeline");
+  if (APP.charts.timeline) APP.charts.timeline.destroy();
+
+  const data = APP.sessionDetections.map(d => ({
+    x: (d.timestamp_ms / 1000).toFixed(1),
+    y: d.confidence,
+  }));
+
+  APP.charts.timeline = new Chart(ctx, {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: "Detections",
+        data: data,
+        backgroundColor: chartColors.danger + "cc",
+        borderColor: chartColors.danger,
+        pointRadius: 6,
+        pointHoverRadius: 8,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: "Time (s)", color: "#5a6a7e" }, grid: { color: "#c9d3df" }, ticks: { color: "#5a6a7e" } },
+        y: { title: { display: true, text: "Confidence", color: "#5a6a7e" }, grid: { color: "#c9d3df" }, ticks: { color: "#5a6a7e" }, min: 0, max: 1 },
+      }
+    }
+  });
+}
+
+function buildAccuracyChart(byType) {
+  const ctx = document.getElementById("chart-accuracy");
+  if (APP.charts.accuracy) APP.charts.accuracy.destroy();
+
+  const labels = byType.map(t => t.bfrb_type);
+  const confirmed = byType.map(t => t.confirmed || 0);
+  const rejected = byType.map(t => t.rejected || 0);
+
+  APP.charts.accuracy = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Confirmed", data: confirmed, backgroundColor: chartColors.success + "cc", borderRadius: 4 },
+        { label: "False Alarm", data: rejected, backgroundColor: chartColors.danger + "cc", borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: "#1a2332", font: { size: 11 } } } },
+      scales: {
+        x: { grid: { color: "#c9d3df" }, ticks: { color: "#5a6a7e", font: { size: 10 } }, stacked: true },
+        y: { grid: { color: "#c9d3df" }, ticks: { color: "#5a6a7e" }, stacked: true, beginAtZero: true },
+      }
+    }
+  });
+}
+
+// =============================================================================
+// HISTORY PAGE
+// =============================================================================
+function loadHistory() {
+  fetch("/api/sessions")
+    .then(r => r.json())
+    .then(sessions => {
+      document.getElementById("history-count").textContent = sessions.length + " sessions";
+      const tbody = document.getElementById("session-table-body");
+
+      if (sessions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:30px;">No sessions yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = sessions.map(s => {
+        const isLive = !s.end_time;
+        let duration = "--";
+        if (s.start_time && s.end_time) {
+          const diff = (new Date(s.end_time) - new Date(s.start_time)) / 1000;
+          const m = Math.floor(diff / 60), sec = Math.floor(diff % 60);
+          duration = m + "m " + sec + "s";
+        }
+        let types = "--";
+        try { types = JSON.parse(s.selected_types || "[]").join(", ") || "All"; } catch(e) { types = "All"; }
+        if (types.length > 40) types = types.slice(0, 37) + "...";
+
+        return `<tr>
+          <td>${s.id}</td>
+          <td>${s.start_time || "--"}</td>
+          <td>${duration}</td>
+          <td>${s.total_detections || 0}</td>
+          <td style="color:var(--success)">${s.total_confirmed || 0}</td>
+          <td style="color:var(--danger)">${s.total_rejected || 0}</td>
+          <td style="font-size:11px;color:var(--text-dim);">${types}</td>
+          <td><span class="pill ${isLive ? 'pill-live' : 'pill-done'}">${isLive ? "LIVE" : "Done"}</span></td>
+        </tr>`;
+      }).join("");
+    })
+    .catch(() => {});
+}
+
+// =============================================================================
+// MEDIAPIPE HOLISTIC
+// =============================================================================
+const holistic = new Holistic({
+  locateFile: f => "https://cdn.jsdelivr.net/npm/@mediapipe/holistic/" + f,
+});
+
+holistic.setOptions({
+  modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false,
+  refineFaceLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+});
+
+const canvas = document.getElementById("output_canvas");
+const ctx = canvas.getContext("2d");
+const videoEl = document.getElementById("input_video");
+
+holistic.onResults(results => {
+  canvas.width = results.image.width;
+  canvas.height = results.image.height;
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0);
+
+  const rawHand = results.rightHandLandmarks || results.leftHandLandmarks || null;
+  const rawFace = results.faceLandmarks || null;
+  const t = Date.now();
+
+  // [Tier 1 / 2.1] One-Euro-filter the landmarks before any downstream calc.
+  // We keep the *raw* landmarks for drawing (so the user sees real positions)
+  // but pass *smoothed* landmarks to the detection pipeline.
+  const hand = rawHand ? handSmoother.smoothLandmarks(rawHand, "h", t) : null;
+  const face = rawFace ? faceSmoother.smoothLandmarks(rawFace, "f", t) : null;
+
+  if (rawFace) drawConnectors(ctx, rawFace, FACEMESH_FACE_OVAL, { color: "rgba(26,58,92,.4)", lineWidth: 1 });
+
+  if (rawHand) {
+    const isBFRB = detector.state === "BFRB" || detector.pinchPullActive;
+    const color = isBFRB ? "#d9534f" : detector.state === "DWELL" ? "#ce640c" : "#2e8b57";
+    drawConnectors(ctx, rawHand, HAND_CONNECTIONS, { color, lineWidth: 2 });
+    drawLandmarks(ctx, rawHand, { color: "#fff", fillColor: color, lineWidth: 1, radius: 3 });
+  }
+
+  ctx.restore();
+
+  if (!hand) {
+    detector.update(null, face, t);
+    handSmoother.reset();   // forget hand history when hand disappears
+    mlWindow.reset();
+    APP.lastHandPose = "unknown";
+    document.getElementById("state-badge").className = "state-badge nohand";
+    document.getElementById("state-badge").textContent = "No hand detected";
+    document.getElementById("border-flash").className = "border-flash";
+    document.getElementById("pred-label").className = "pred-label waiting";
+    document.getElementById("pred-label").textContent = "Waiting for hand...";
+    document.getElementById("bfrb-type-label").textContent = "";
+    document.getElementById("stat-score").textContent = "0%";
+    document.getElementById("sig-eating").textContent = "No";
+    document.getElementById("sig-eating").className = "s-value ok";
+    document.getElementById("sig-resting").textContent = "No";
+    document.getElementById("sig-resting").className = "s-value ok";
+    document.getElementById("sig-handpose").textContent = "--";
+    document.getElementById("sig-mlscore").textContent = "--";
+    document.getElementById("sig-fused").textContent = "--";
+    const sigZ = document.getElementById("sig-zone");
+    if (sigZ) { sigZ.textContent = "--"; sigZ.className = "s-value"; }
+    return;
+  }
+
+  // [Tier 2 / 2.5] Hand pose / grip classification on smoothed landmarks
+  const handPose = classifyHandPose(hand);
+  APP.lastHandPose = handPose;
+
+  // [Tier 3 / 2.4] Refresh multi-zone face centroids ONCE per frame.
+  ZoneEngine.recompute(face);
+
+  // Closest face zone to the hand (used for Zone signal + telemetry)
+  let closestZone = null;
+  if (Object.keys(ZoneEngine.centroids).length > 0) {
+    const probe = { x: (hand[4].x + hand[8].x) / 2, y: (hand[4].y + hand[8].y) / 2 };
+    closestZone = ZoneEngine.closestZoneTo(probe);
+  }
+  APP.lastZone = closestZone;
+
+  // Run rule-based detector
+  const result = detector.update(hand, face, t);
+
+  // [Tier 1 / 2.2 + 3.1] Build ML feature window + late fusion
+  if (face && face.length >= 468) {
+    const faceWidth = Math.hypot(face[234].x - face[454].x, face[234].y - face[454].y);
+    if (faceWidth > 0.01) mlWindow.push(hand, face, t, faceWidth, face);
+  }
+  const useMl = (document.getElementById("chk-ml") || {}).checked !== false;
+  if (useMl && MLClassifier.available && mlWindow.ready()) {
+    const feats = mlWindow.features();
+    MLClassifier.predictMaybe(feats, result.bfrbScore || 0, t);
+  }
+
+  // Attach ML + pose / zone info to the result for downstream logging
+  result.handPose   = handPose;
+  result.mlScore    = useMl ? MLClassifier.lastProba : null;
+  result.fusedScore = useMl ? MLClassifier.lastFused : null;
+  result.closestZone = closestZone;
+
+  // [IEEE log] Per-frame structured telemetry
+  if (APP.sessionActive
+      && (document.getElementById("chk-telemetry") || {}).checked !== false) {
+    Telemetry.push({
+      t_ms: APP.sessionStartTime ? (t - APP.sessionStartTime) : 0,
+      state: result.state,
+      is_bfrb: !!result.isBFRB,
+      bfrb_score: +(result.bfrbScore || 0).toFixed(3),
+      ml_score: result.mlScore != null ? +result.mlScore.toFixed(3) : null,
+      fused_score: result.fusedScore != null ? +result.fusedScore.toFixed(3) : null,
+      hand_pose: handPose,
+      smooth_dist: +(result.smoothDist || 0).toFixed(3),
+      smooth_vel:  +(result.smoothVel  || 0).toFixed(4),
+      mouth_open:  +(result.mouthOpen || 0).toFixed(3),
+      extended_count: result.extendedCount,
+      eating: !!result.eatingLikely,
+      resting: !!result.restingLikely,
+      zone: closestZone ? closestZone.name : null,
+      zone_distance: closestZone ? +closestZone.distance.toFixed(3) : null,
+      ws_rtt_ms: WSClient.rttMs ? Math.round(WSClient.rttMs) : null,
+    });
+  }
+
+  updateUI(result);
+
+  // Pilot study counts every triggered detection in real time
+  if (PilotStudy.running && (result.isBFRB || result.isPinchPull) && result.bfrbType) {
+    PilotStudy.onAutoDetection(result.bfrbType);
+  }
+});
+
+const camera = new Camera(videoEl, {
+  onFrame: async () => { await holistic.send({ image: videoEl }); },
+  width: 1280, height: 720,
+});
+
+camera.start()
+  .then(() => {
+    showToast("Camera ready - detection engine active", "success");
+    document.getElementById("state-badge").textContent = "Show your hand";
+    document.getElementById("state-badge").className = "state-badge idle";
+  })
+  .catch(err => {
+    showToast("Camera error: " + err.message, "error");
+    document.getElementById("state-badge").textContent = "Camera access denied";
+  });
+</script>
+</body>
+</html>

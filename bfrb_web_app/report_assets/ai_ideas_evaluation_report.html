@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AI IDEAS Evaluation Report — BFRB Detection v3</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px 24px; line-height: 1.7; }
+  .container { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: 6px; color: #f1f5f9; }
+  .subtitle { font-size: 0.9rem; color: #64748b; margin-bottom: 32px; }
+  h2 { font-size: 1.25rem; color: #93c5fd; margin: 32px 0 14px; padding-bottom: 6px; border-bottom: 1px solid #1e293b; }
+  h3 { font-size: 1.05rem; color: #fbbf24; margin: 20px 0 10px; }
+  p, li { font-size: 0.92rem; color: #cbd5e1; margin-bottom: 10px; }
+  ul, ol { padding-left: 22px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+  code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; color: #fbbf24; }
+  strong { color: #f1f5f9; }
+
+  .matrix { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.83rem; }
+  .matrix th { background: #1e293b; color: #93c5fd; padding: 10px 12px; text-align: left; border-bottom: 2px solid #334155; position: sticky; top: 0; }
+  .matrix td { padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #cbd5e1; vertical-align: top; }
+  .matrix tr:hover td { background: rgba(30,41,59,0.5); }
+
+  .impl { color: #34d399; font-weight: 700; }
+  .skip { color: #f87171; font-weight: 600; }
+  .partial { color: #fbbf24; font-weight: 600; }
+
+  .strategy { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 20px 24px; margin: 18px 0; }
+  .strategy.implemented { border-left: 4px solid #34d399; }
+  .strategy.skipped { border-left: 4px solid #f87171; }
+  .strategy h3 { margin-top: 0; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 8px; }
+  .badge.green { background: rgba(52,211,153,0.15); color: #34d399; }
+  .badge.red { background: rgba(248,113,113,0.15); color: #f87171; }
+  .badge.yellow { background: rgba(251,191,36,0.15); color: #fbbf24; }
+
+  .converge { background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 14px 18px; margin: 14px 0; }
+  .converge strong { color: #a5b4fc; }
+
+  .code-block { background: #0d1117; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin: 12px 0; font-family: 'Courier New', monospace; font-size: 0.8rem; color: #94a3b8; white-space: pre; overflow-x: auto; line-height: 1.5; }
+
+  .summary { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #3b82f6; border-radius: 12px; padding: 24px; margin: 32px 0; }
+  .summary h3 { color: #60a5fa; margin-top: 0; }
+
+  .footer { text-align: center; font-size: 0.75rem; color: #475569; margin-top: 40px; padding-top: 20px; border-top: 1px solid #1e293b; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>AI IDEAS Evaluation &amp; Implementation Report</h1>
+<p class="subtitle">Evaluating 3 AI recommendations for false-positive reduction in the BFRB Detection Engine<br/>
+Prepared by: Nishanth Tiglao &bull; ENEB453 Final Project &bull; April 2026</p>
+
+<h2>1. Source Overview</h2>
+<p>Three leading AI systems were consulted for strategies to reduce false positives in the BFRB detection engine. Each independently proposed discriminator strategies using MediaPipe hand + face landmarks:</p>
+<table class="matrix">
+  <tr><th>AI Source</th><th>Strategies Proposed</th><th>Key Strength</th></tr>
+  <tr><td><strong>Claude Opus 4.6</strong></td><td>8 strategies with full JavaScript code, integration order</td><td>Most implementation-ready; provided exact thresholds and code</td></tr>
+  <tr><td><strong>Gemini</strong></td><td>4 strategies with mathematical formulas</td><td>Strong clinical understanding; good pinch vs grip distinction</td></tr>
+  <tr><td><strong>Perplexity</strong></td><td>Comprehensive framework with per-BFRB rules, gating, negative detectors</td><td>Most rigorous academic framing; cited research papers</td></tr>
+</table>
+
+<h2>2. Convergence Analysis</h2>
+<p>Despite being independent, all three AIs converged on remarkably similar strategies:</p>
+
+<div class="converge">
+  <strong>All 3 agreed on:</strong> Mouth Aperture, Micro-Motion/Jitter, Finger Curl/Extension analysis<br/>
+  <strong>2/3 agreed on:</strong> Palm Orientation, Multi-Signal Scoring, Negative Detectors (eating, resting)<br/>
+  <strong>Only 1 proposed:</strong> Hand Openness (convex hull ratio), Approach Trajectory (entry direction tracking)
+</div>
+
+<table class="matrix">
+  <tr>
+    <th>Strategy</th>
+    <th>Claude</th>
+    <th>Gemini</th>
+    <th>Perplexity</th>
+    <th>Consensus</th>
+    <th>Decision</th>
+  </tr>
+  <tr>
+    <td>Mouth Aperture (eating filter)</td>
+    <td>#4</td><td>#1 (MAR)</td><td>&sect;2.3</td>
+    <td><strong>3/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Micro-Motion / Jitter</td>
+    <td>#5</td><td>#2</td><td>&sect;2.4</td>
+    <td><strong>3/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Extended Finger Count</td>
+    <td>#6</td><td>#3 (curl)</td><td>&sect;2.5</td>
+    <td><strong>3/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Palm Orientation</td>
+    <td>#3</td><td>#4</td><td>implicit</td>
+    <td><strong>2/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Multi-Signal Scoring</td>
+    <td>#8</td><td>&mdash;</td><td>&sect;5.1</td>
+    <td><strong>2/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Eating Negative Detector</td>
+    <td>in #4</td><td>in #1</td><td>&sect;3.2</td>
+    <td><strong>3/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Resting Negative Detector</td>
+    <td>in #5</td><td>&mdash;</td><td>&sect;3.3</td>
+    <td><strong>2/3</strong></td>
+    <td class="impl">IMPLEMENTED</td>
+  </tr>
+  <tr>
+    <td>Finger Curl Angles (PIP joints)</td>
+    <td>#1</td><td>&mdash;</td><td>&mdash;</td>
+    <td>1/3</td>
+    <td class="skip">SKIPPED</td>
+  </tr>
+  <tr>
+    <td>Hand Openness (convex hull)</td>
+    <td>#2</td><td>&mdash;</td><td>&mdash;</td>
+    <td>1/3</td>
+    <td class="skip">SKIPPED</td>
+  </tr>
+  <tr>
+    <td>Approach Trajectory (15-frame buffer)</td>
+    <td>#7</td><td>&mdash;</td><td>&mdash;</td>
+    <td>1/3</td>
+    <td class="partial">SIMPLIFIED</td>
+  </tr>
+</table>
+
+<h2>3. Detailed Evaluation of Each Strategy</h2>
+
+<div class="strategy implemented">
+  <h3>Mouth Aperture <span class="badge green">IMPLEMENTED</span></h3>
+  <p><strong>Why implement:</strong> Highest-impact, lowest-cost discriminator. All 3 AIs agreed this is the #1 priority. Eating is the most common false positive, and mouth opening is the clearest distinguishing signal between eating (mouth opens wide for food) and nail biting (mouth barely opens).</p>
+  <p><strong>How implemented:</strong> Compute <code>dist(face[13], face[14]) / faceWidth</code> each frame. EMA-smoothed. If mouth open &gt; 0.07fw while hand is near mouth with wrist below mouth, flag as <code>eatingLikely</code> and veto BFRB detection.</p>
+  <p><strong>Impact:</strong> Eliminates nearly all eating false positives.</p>
+</div>
+
+<div class="strategy implemented">
+  <h3>Extended Finger Count <span class="badge green">IMPLEMENTED</span></h3>
+  <p><strong>Why implement:</strong> Simple, fast, and highly effective. A BFRB pinch uses 0-2 extended fingers. An open palm resting on the face has 4-5 extended fingers. Holding a phone or cup has 2-3. This provides clear separation.</p>
+  <p><strong>Why chosen over Claude's #1 (Finger Curl Angles):</strong> Claude's PIP joint angle computation is more granular but also more expensive and harder to tune. The extended finger count achieves the same discrimination with simpler logic. Gemini's curl analysis is similar but framed differently. The count-based approach is most robust to MediaPipe's occasional joint-position noise.</p>
+  <p><strong>How implemented:</strong> For each finger, compare tip-to-wrist distance vs PIP-to-wrist distance. Tip farther = extended. Count total extended. &ge;4 = open palm resting.</p>
+</div>
+
+<div class="strategy implemented">
+  <h3>Micro-Motion / Jitter Detection <span class="badge green">IMPLEMENTED</span></h3>
+  <p><strong>Why implement:</strong> The ONLY way to distinguish resting from picking. Both produce low velocity and sustained proximity. Only micro-motion (small repeated oscillations) separates them. All 3 AIs identified this as critical.</p>
+  <p><strong>How implemented:</strong> 30-frame sliding buffer of index fingertip positions. Compute positional variance and direction reversal rate. Static rest: variance &lt; 0.00002 + few reversals. Active picking: moderate variance (0.00003&ndash;0.0005) + high reversal rate (&gt;30%).</p>
+  <p><strong>Key thresholds (from Claude #5, validated by Gemini #2):</strong></p>
+  <ul>
+    <li>Static rest: variance &lt; 0.00002 AND reversals &lt; 15%</li>
+    <li>Micro-oscillating (BFRB): variance 0.00003&ndash;0.0005 AND reversals &gt; 30%</li>
+    <li>Large movement (not BFRB): variance &gt; 0.0005</li>
+  </ul>
+</div>
+
+<div class="strategy implemented">
+  <h3>Palm Orientation <span class="badge green">IMPLEMENTED</span></h3>
+  <p><strong>Why implement:</strong> When people eat, they bring food to their mouth with the palm/wrist leading (approach angle &gt; 1.0 rad). When performing BFRBs, fingertips lead (approach angle &lt; 0.6 rad). This adds directional information beyond proximity.</p>
+  <p><strong>Simplification from Claude #3 + #7:</strong> Claude proposed both palm orientation (#3) and a separate approach trajectory (#7) with a 15-frame buffer. We merged these into a single approach angle computation: the angle between the wrist&rarr;middle-finger vector and the wrist&rarr;nose vector. This captures the same information with less code and no extra buffer.</p>
+</div>
+
+<div class="strategy implemented">
+  <h3>Dual-Signal Confirmation Matrix <span class="badge green">IMPLEMENTED</span></h3>
+  <p><strong>Why implement:</strong> No single signal is foolproof. Claude's strategy #8 and Perplexity's &sect;5.1 both recommend a weighted voting system. This is the "master gate" that combines all discriminators into a single confidence score.</p>
+  <p><strong>Weights chosen:</strong></p>
+  <div class="code-block">proximity:        0.18   // hand near face (existing)
+dwellTime:        0.15   // stayed > threshold (existing)
+fingerCurl:       0.12   // correct finger count (0-2 = BFRB grip)
+pinchStrength:    0.12   // thumb+index pinching (existing)
+microOscillation: 0.13   // repetitive micro-movements
+notEating:        0.15   // mouth not wide open
+notResting:       0.10   // not static + not open palm
+palmOrientation:  0.05   // fingertips aimed at face
+                  ─────
+Total:            1.00</div>
+  <p><strong>Threshold:</strong> BFRB fires when score &ge; 0.55 (at least 4 major signals must agree).</p>
+  <p><strong>Why 0.55 not 0.60:</strong> Perplexity recommended 0.90 for "high precision mode" but this would miss many true BFRBs. Claude suggested 0.60. We chose 0.55 as a balanced default — catches real BFRBs while still requiring multiple confirming signals.</p>
+</div>
+
+<div class="strategy skipped">
+  <h3>Finger Curl Angles (PIP Joint) <span class="badge red">SKIPPED</span></h3>
+  <p><strong>Why skip:</strong> Redundant with Extended Finger Count. Claude's #1 computes the angle at each finger's PIP joint (MCP&rarr;PIP&rarr;DIP). While more granular, it's computationally heavier and harder to tune. The extended finger count already captures the same discrimination (curled fingers = not extended). Adding both would create conflicting thresholds with no additional discriminative power.</p>
+  <p><strong>Only Claude proposed this</strong> (1/3 consensus). Gemini's curl analysis is similar but simpler. We adopted the count-based approach which all 3 AIs converge on conceptually.</p>
+</div>
+
+<div class="strategy skipped">
+  <h3>Hand Openness (Convex Hull) <span class="badge red">SKIPPED</span></h3>
+  <p><strong>Why skip:</strong> Only Claude proposed this (1/3 consensus). The key problem is it requires a <strong>baseline palm area</strong> that varies per person and per camera distance. Without calibration, the "is palm area normal?" check would produce unreliable results. The extended finger count achieves a similar discrimination (open vs closed hand) without needing a baseline.</p>
+</div>
+
+<div class="strategy">
+  <h3>Approach Trajectory <span class="badge yellow">SIMPLIFIED</span></h3>
+  <p><strong>Why simplify:</strong> Claude's #7 tracks a 15-frame buffer of wrist positions and computes the approach direction when entering proximity. This adds another ring buffer, extra memory, and complex entry-point logic. The same directional information is captured more simply by the palm orientation check (wrist&rarr;fingertip vs wrist&rarr;nose angle), which we already compute every frame.</p>
+</div>
+
+<h2>4. v3 Architecture Summary</h2>
+<p>The v3 engine adds 6 new discriminator signals on top of the existing v2 state machine:</p>
+
+<div class="code-block">Camera Feed (30fps)
+    │
+    ▼
+MediaPipe Holistic → 21 Hand + 468 Face Landmarks
+    │
+    ▼
+┌─── EXISTING v2 SIGNALS ───┐    ┌─── NEW v3 DISCRIMINATORS ──┐
+│ Proximity (smoothDist)     │    │ Mouth Aperture             │
+│ Velocity (smoothVel)       │    │ Extended Finger Count      │
+│ Pinch Strength             │    │ Micro-Motion Jitter        │
+│ Cluster Strength           │    │ Palm Orientation           │
+│ Dwell Timer                │    │ Eating Detector (negative) │
+│ Pinch-Pull Engine          │    │ Resting Detector (negative)│
+└────────────────────────────┘    └────────────────────────────┘
+    │                                         │
+    └──────────────┬──────────────────────────┘
+                   ▼
+        Dual-Signal Confidence Score
+        (weighted vote, 8 signals)
+                   │
+                   ▼
+        Score ≥ 0.55 AND NOT eating AND NOT resting?
+                   │
+            ┌──────┴──────┐
+            YES           NO
+            │             │
+          BFRB         Filtered
+         Detected      (no alert)</div>
+
+<h2>5. Expected Impact</h2>
+<table class="matrix">
+  <tr><th>False Positive Scenario</th><th>v2 Behavior</th><th>v3 Behavior</th><th>New Filter</th></tr>
+  <tr>
+    <td>Eating with fork/spoon</td>
+    <td class="skip">BFRB after 1s dwell</td>
+    <td class="impl">Filtered: mouth open + wrist below</td>
+    <td>Eating Detector</td>
+  </tr>
+  <tr>
+    <td>Eating finger food</td>
+    <td class="skip">BFRB after 1s dwell</td>
+    <td class="impl">Filtered: mouth opens wide</td>
+    <td>Mouth Aperture</td>
+  </tr>
+  <tr>
+    <td>Resting chin on palm</td>
+    <td class="skip">BFRB after 1s dwell</td>
+    <td class="impl">Filtered: static + open palm</td>
+    <td>Resting Detector + Finger Count</td>
+  </tr>
+  <tr>
+    <td>Phone to ear</td>
+    <td class="skip">BFRB after 1s dwell</td>
+    <td class="impl">Filtered: 3+ extended fingers</td>
+    <td>Extended Finger Count</td>
+  </tr>
+  <tr>
+    <td>Adjusting glasses</td>
+    <td class="skip">BFRB after 1s dwell</td>
+    <td class="impl">Filtered: multiple fingers extended</td>
+    <td>Extended Finger Count</td>
+  </tr>
+  <tr>
+    <td>Hand resting on cheek (still)</td>
+    <td class="skip">BFRB after 1s dwell</td>
+    <td class="impl">Filtered: zero micro-motion</td>
+    <td>Micro-Motion + Resting Detector</td>
+  </tr>
+  <tr>
+    <td>Real hair pulling</td>
+    <td class="impl">Detected via pinch-pull</td>
+    <td class="impl">Detected: pinch + curl + pull</td>
+    <td>All signals agree</td>
+  </tr>
+  <tr>
+    <td>Real skin picking</td>
+    <td class="impl">Detected via dwell</td>
+    <td class="impl">Detected: micro-oscillation + cluster</td>
+    <td>Score &ge; 0.55</td>
+  </tr>
+  <tr>
+    <td>Real nail biting</td>
+    <td class="impl">Detected via dwell</td>
+    <td class="impl">Detected: mouth closed + 1-2 fingers</td>
+    <td>Score &ge; 0.55</td>
+  </tr>
+</table>
+
+<div class="summary">
+  <h3>Conclusion</h3>
+  <p>The three AI sources provided remarkably consistent recommendations, converging on the same core strategies from different analytical angles. By implementing the <strong>6 highest-consensus, highest-impact strategies</strong> and skipping 2 that were redundant or impractical, the v3 engine gains:</p>
+  <ul>
+    <li><strong>Eating false positive elimination</strong> via mouth aperture + wrist position</li>
+    <li><strong>Resting false positive elimination</strong> via micro-motion jitter + finger count</li>
+    <li><strong>Multi-signal gating</strong> requiring 4+ independent signals to agree before alerting</li>
+    <li><strong>Negative detectors</strong> that explicitly recognize and veto common false positive scenarios</li>
+  </ul>
+  <p style="margin-top: 12px;">The approach is computationally lightweight (all signals are simple distance/angle calculations on existing landmarks), requires no additional ML training data, and integrates directly into the existing state machine without replacing any working v2 logic.</p>
+</div>
+
+<div class="footer">
+  ENEB453 Final Project &bull; Nishanth Tiglao &bull; April 2026<br/>
+  AI IDEAS Evaluation Report — BFRB Detection Engine v3
+</div>
+
+</div>
+</body>
+</html>

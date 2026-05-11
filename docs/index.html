@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BFRB Detection System</title>
+
+  <!-- MediaPipe Holistic -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #232733;
+      --border: #2d3142;
+      --text: #e4e6ed;
+      --text-dim: #8b8fa3;
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,.25);
+      --danger: #ef4444;
+      --danger-glow: rgba(239,68,68,.2);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --info: #3b82f6;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', -apple-system, sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; overflow-x: hidden;
+    }
+
+    /* ── NOTIFICATION OVERLAY ── */
+    #notification-overlay {
+      display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 10000; background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
+      align-items: flex-start; justify-content: center; padding-top: 80px;
+      animation: fadeIn .25s ease;
+    }
+    #notification-overlay.show { display: flex; }
+    @keyframes fadeIn { from{opacity:0}to{opacity:1} }
+    @keyframes slideDown { from{transform:translateY(-40px);opacity:0}to{transform:translateY(0);opacity:1} }
+    @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 var(--danger-glow)}70%{box-shadow:0 0 0 20px transparent}100%{box-shadow:0 0 0 0 transparent} }
+
+    .notif-card {
+      background: var(--surface); border: 2px solid var(--danger); border-radius: 16px;
+      padding: 32px 40px; max-width: 460px; width: 90%; text-align: center;
+      animation: slideDown .35s ease;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 40px var(--danger-glow);
+    }
+    .notif-icon {
+      width: 64px; height: 64px; border-radius: 50%; background: var(--danger-glow);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px; font-size: 28px; animation: pulse-ring 2s infinite;
+    }
+    .notif-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .notif-type { color: var(--danger); font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .notif-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; }
+    .notif-question { font-size: 15px; margin-bottom: 16px; color: var(--text-dim); }
+    .notif-buttons { display: flex; gap: 12px; justify-content: center; }
+    .notif-btn {
+      border: none; border-radius: 10px; padding: 12px 32px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .notif-btn:hover { transform: translateY(-2px); }
+    .notif-btn:active { transform: translateY(0); }
+    .notif-btn-yes { background: var(--success); color: #fff; box-shadow: 0 4px 14px rgba(34,197,94,.3); }
+    .notif-btn-no { background: var(--danger); color: #fff; box-shadow: 0 4px 14px rgba(239,68,68,.3); }
+    .notif-dismiss { margin-top: 14px; background: none; border: none; color: var(--text-dim); font-size: 12px; cursor: pointer; text-decoration: underline; }
+
+    /* ── TOAST ── */
+    #toast-container {
+      position: fixed; top: 16px; right: 16px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    }
+    .toast {
+      background: var(--surface2); border-left: 4px solid var(--accent);
+      padding: 12px 18px; border-radius: 8px; font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3); animation: slideIn .3s ease;
+      pointer-events: auto; max-width: 340px;
+    }
+    .toast.success { border-left-color: var(--success); }
+    .toast.warning { border-left-color: var(--warning); }
+    .toast.error   { border-left-color: var(--danger); }
+    @keyframes slideIn { from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1} }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+    }
+    .logo { color: var(--accent); font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+    .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)} }
+    .nav-tabs { display: flex; gap: 4px; }
+    .nav-tab {
+      background: none; border: none; color: var(--text-dim);
+      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+    }
+    .nav-tab:hover { background: var(--surface2); color: var(--text); }
+    .nav-tab.active { background: var(--accent); color: #fff; }
+    .session-pill {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--text-dim);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .session-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .session-dot.live { background: var(--success); animation: pulse-dot 1.5s infinite; }
+    .session-dot.off { background: var(--text-dim); }
+
+    /* ── PAGES ── */
+    .page-view { display: none; }
+    .page-view.active { display: block; }
+
+    /* ── STATS ROW ── */
+    .stats-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 16px 20px 0; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px; text-align: center;
+    }
+    .stat-value { font-size: 26px; font-weight: 800; line-height: 1.2; }
+    .stat-value.danger { color: var(--danger); }
+    .stat-value.success { color: var(--success); }
+    .stat-value.warning { color: var(--warning); }
+    .stat-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+    /* ── MAIN GRID ── */
+    .main-grid { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px 20px; min-height: calc(100vh - 180px); }
+
+    /* ── CARDS ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .card-head {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13px; font-weight: 700;
+    }
+    .card-head .badge { font-size: 10px; padding: 3px 10px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+    .badge-live { background: var(--danger); color: #fff; animation: pulse-dot 2s infinite; }
+    .badge-info { background: var(--accent); color: #fff; }
+    .badge-success { background: var(--success); color: #fff; }
+    .card-body { padding: 14px 16px; }
+
+    /* ── VIDEO ── */
+    .video-container { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; }
+    #input_video { display: none; }
+    #output_canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .border-flash { position: absolute; inset: 0; border: 3px solid transparent; pointer-events: none; transition: all .2s; border-radius: 8px; }
+    .border-flash.bfrb { border-color: var(--danger); background: rgba(239,68,68,.06); box-shadow: inset 0 0 30px var(--danger-glow); }
+    .border-flash.suspicious { border-color: var(--warning); background: rgba(245,158,11,.04); }
+
+    .state-badge {
+      position: absolute; top: 12px; left: 12px; padding: 6px 16px; border-radius: 8px;
+      font-size: 12px; font-weight: 700; pointer-events: none; transition: all .25s; backdrop-filter: blur(8px);
+    }
+    .state-badge.idle      { background: rgba(100,116,139,.6); color: #cbd5e1; }
+    .state-badge.proximity { background: rgba(245,158,11,.7); color: #fff; }
+    .state-badge.dwell     { background: rgba(234,88,12,.7); color: #fff; }
+    .state-badge.bfrb      { background: rgba(239,68,68,.85); color: #fff; }
+    .state-badge.nohand    { background: rgba(30,41,59,.6); color: #94a3b8; }
+    .state-badge.eating    { background: rgba(34,197,94,.7); color: #fff; }
+    .state-badge.resting   { background: rgba(99,102,241,.7); color: #fff; }
+
+    .dwell-bar-wrap { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); width: 220px; pointer-events: none; opacity: 0; transition: opacity .3s; }
+    .dwell-bar-wrap.visible { opacity: 1; }
+    .dwell-lbl { text-align: center; font-size: 11px; color: #fff; margin-bottom: 4px; text-shadow: 0 1px 4px #000; }
+    .dwell-track { height: 5px; background: rgba(255,255,255,.15); border-radius: 3px; overflow: hidden; }
+    .dwell-fill { height: 100%; border-radius: 3px; transition: width .1s linear; }
+
+    .bfrb-overlay-type {
+      position: absolute; bottom: 42px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; color: #fca5a5; background: rgba(0,0,0,.6);
+      padding: 4px 14px; border-radius: 10px; pointer-events: none;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+    }
+    .bfrb-overlay-type.visible { opacity: 1; }
+
+    /* ── CONTROLS ── */
+    .controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      border: none; border-radius: 8px; padding: 9px 20px; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-danger  { background: var(--danger); color: #fff; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-ghost   { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+
+    /* ── BFRB SELECTOR ── */
+    .selector-panel { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 14px; }
+    .selector-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .selector-title { font-size: 13px; font-weight: 700; }
+    .mode-toggle { display: flex; background: var(--bg); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+    .mode-btn {
+      border: none; padding: 5px 14px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all .2s; background: transparent; color: var(--text-dim);
+    }
+    .mode-btn.active { background: var(--accent); color: #fff; }
+
+    .bfrb-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .bfrb-option {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px;
+      background: var(--bg); border: 1px solid var(--border); cursor: pointer; transition: all .15s; font-size: 12px;
+    }
+    .bfrb-option:hover { border-color: var(--accent); }
+    .bfrb-option.selected { border-color: var(--accent); background: var(--accent-glow); }
+    .bfrb-option input { display: none; }
+    .bfrb-check {
+      width: 16px; height: 16px; border-radius: 4px; border: 2px solid var(--border); flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; transition: all .15s; font-size: 10px; color: #fff;
+    }
+    .bfrb-option.selected .bfrb-check { background: var(--accent); border-color: var(--accent); }
+    .bfrb-option .bfrb-name { font-weight: 600; }
+    .bfrb-option .bfrb-cat { font-size: 10px; color: var(--text-dim); }
+
+    /* ── SIDEBAR ── */
+    .sidebar { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: calc(100vh - 180px); }
+
+    .detection-status { text-align: center; padding: 8px 0; }
+    .pred-label { font-size: 22px; font-weight: 800; transition: color .3s; }
+    .pred-label.bfrb { color: var(--danger); }
+    .pred-label.no-bfrb { color: var(--success); }
+    .pred-label.waiting { color: var(--text-dim); font-size: 16px; }
+    .type-label { color: var(--warning); font-size: 14px; font-weight: 600; margin-top: 4px; min-height: 20px; }
+
+    .conf-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin: 12px 0 6px; }
+    .conf-track { background: var(--bg); border-radius: 4px; height: 6px; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 4px; transition: width .3s, background .3s; }
+    .conf-fill.high { background: var(--danger); }
+    .conf-fill.med  { background: var(--warning); }
+    .conf-fill.low  { background: var(--success); }
+
+    .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+    .signal { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 11px; }
+    .signal .s-label { color: var(--text-dim); margin-bottom: 3px; }
+    .signal .s-value { font-weight: 700; font-size: 13px; }
+    .signal .s-value.active { color: var(--danger); }
+    .signal .s-value.ok { color: var(--success); }
+
+    .dist-item { margin-bottom: 6px; }
+    .dist-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+    .dist-track { height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+    .dist-fill { height: 100%; border-radius: 2px; transition: width .15s; }
+
+    .state-dots { display: flex; gap: 3px; }
+    .sdot { flex: 1; height: 6px; border-radius: 3px; background: var(--surface2); transition: background .2s; }
+    .sdot.idle { background: #64748b; }
+    .sdot.proximity { background: var(--warning); }
+    .sdot.dwell { background: #ea580c; }
+    .sdot.bfrb { background: var(--danger); }
+    .sdot.pinch { background: #7c3aed; }
+
+    .det-log { max-height: 180px; overflow-y: auto; }
+    .det-entry { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .det-entry:last-child { border-bottom: none; }
+    .det-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .det-dot.high { background: var(--danger); }
+    .det-dot.med { background: var(--warning); }
+    .det-body { flex: 1; }
+    .det-name { font-size: 12px; font-weight: 600; }
+    .det-time { font-size: 10px; color: var(--text-dim); }
+    .det-conf { font-size: 12px; font-weight: 700; }
+
+    /* ── HUD ── */
+    .hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; }
+    .hud-grid .card { min-height: 200px; }
+    .chart-container { position: relative; height: 220px; padding: 8px; }
+    .hud-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 16px 20px 0; }
+
+    /* ── HISTORY ── */
+    .session-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .session-table th { text-align: left; padding: 10px 12px; background: var(--bg); color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+    .session-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .session-table tr:hover td { background: var(--surface2); }
+    .pill { display: inline-block; border-radius: 10px; padding: 2px 10px; font-size: 11px; font-weight: 600; }
+    .pill-live { background: rgba(239,68,68,.15); color: var(--danger); }
+    .pill-done { background: rgba(34,197,94,.15); color: var(--success); }
+
+    footer { text-align: center; color: var(--text-dim); font-size: 11px; padding: 14px; border-top: 1px solid var(--border); }
+
+    @media (max-width: 900px) {
+      .stats-row { grid-template-columns: repeat(3, 1fr); }
+      .main-grid { grid-template-columns: 1fr; }
+      .hud-grid { grid-template-columns: 1fr; }
+      .sidebar { max-height: none; }
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    details summary { cursor:pointer; font-size:12px; color:var(--accent); user-select:none; margin-bottom:6px; }
+    details p, details li { font-size:11px; color:var(--text-dim); line-height:1.6; margin-bottom:3px; }
+    details ul { padding-left:14px; }
+  </style>
+</head>
+<body>
+
+<!-- NOTIFICATION OVERLAY -->
+<div id="notification-overlay">
+  <div class="notif-card">
+    <div class="notif-icon">&#9888;</div>
+    <div class="notif-title">BFRB Behavior Detected</div>
+    <div class="notif-type" id="notif-bfrb-type">Hair Pulling</div>
+    <div class="notif-sub" id="notif-sub">Detected with 92% confidence</div>
+    <div class="notif-question">Was this detection accurate?</div>
+    <div class="notif-buttons">
+      <button class="notif-btn notif-btn-yes" onclick="submitNotifFeedback(true)">Yes, correct</button>
+      <button class="notif-btn notif-btn-no" onclick="submitNotifFeedback(false)">No, false alarm</button>
+    </div>
+    <button class="notif-dismiss" onclick="dismissNotif()">Dismiss without feedback</button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- NAV -->
+<nav>
+  <div class="logo"><div class="logo-dot"></div> BFRB Detect</div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="dashboard">Dashboard</button>
+    <button class="nav-tab" data-page="hud">Session HUD</button>
+    <button class="nav-tab" data-page="history">History</button>
+  </div>
+  <div class="session-pill">
+    <div class="session-dot off" id="session-indicator"></div>
+    <span id="session-status-text">No Session</span>
+  </div>
+</nav>
+
+<!-- DASHBOARD -->
+<div class="page-view active" id="page-dashboard">
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-value" id="stat-fps">0</div><div class="stat-label">FPS</div></div>
+    <div class="stat-card"><div class="stat-value danger" id="stat-detections">0</div><div class="stat-label">Detections</div></div>
+    <div class="stat-card"><div class="stat-value warning" id="stat-pct">0%</div><div class="stat-label">BFRB Time</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-score">0%</div><div class="stat-label">BFRB Score</div></div>
+    <div class="stat-card"><div class="stat-value success" id="stat-accuracy">--</div><div class="stat-label">Accuracy</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-session-time">0:00</div><div class="stat-label">Session Time</div></div>
+  </div>
+
+  <div class="main-grid">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card" style="flex:1;display:flex;flex-direction:column;">
+        <div class="card-head">Live Detection Feed <span class="badge badge-live" id="live-badge">LIVE</span></div>
+        <div class="card-body" style="flex:1;">
+          <div class="video-container">
+            <video id="input_video" autoplay muted playsinline></video>
+            <canvas id="output_canvas"></canvas>
+            <div class="border-flash" id="border-flash"></div>
+            <div class="state-badge nohand" id="state-badge">Initializing...</div>
+            <div class="dwell-bar-wrap" id="dwell-wrap">
+              <div class="dwell-lbl" id="dwell-label">Hold...</div>
+              <div class="dwell-track"><div class="dwell-fill" id="dwell-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bfrb-overlay-type" id="bfrb-type-overlay"></div>
+          </div>
+          <div class="controls">
+            <button class="btn btn-primary" id="btn-start" onclick="startSession()">Start Session</button>
+            <button class="btn btn-danger" id="btn-stop" onclick="stopSession()" style="display:none;">Stop Session</button>
+            <button class="btn btn-ghost" onclick="clearAllData()">Clear Data</button>
+            <span style="flex:1;"></span>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;">
+              <input type="checkbox" id="chk-notif" checked style="accent-color:var(--accent);"/>Notifications
+            </label>
+          </div>
+          <div class="selector-panel">
+            <div class="selector-header">
+              <div class="selector-title">Detection Targets</div>
+              <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="multi" onclick="setSelectionMode('multi')">Multi</button>
+                <button class="mode-btn" data-mode="single" onclick="setSelectionMode('single')">Single</button>
+              </div>
+            </div>
+            <div class="bfrb-options" id="bfrb-options"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-head">Detection Status <span class="badge badge-info" id="status-badge">Monitoring</span></div>
+        <div class="card-body">
+          <div class="detection-status">
+            <div class="pred-label waiting" id="pred-label">Waiting for hand...</div>
+            <div class="type-label" id="bfrb-type-label"></div>
+          </div>
+          <div class="conf-row"><span>BFRB Confidence</span><span id="conf-text">--</span></div>
+          <div class="conf-track"><div class="conf-fill low" id="conf-fill" style="width:0%"></div></div>
+          <div class="signal-grid">
+            <div class="signal"><div class="s-label">Mouth</div><div class="s-value ok" id="sig-mouth">Closed</div></div>
+            <div class="signal"><div class="s-label">Fingers</div><div class="s-value" id="sig-fingers">-</div></div>
+            <div class="signal"><div class="s-label">Eating</div><div class="s-value ok" id="sig-eating">No</div></div>
+            <div class="signal"><div class="s-label">Resting</div><div class="s-value ok" id="sig-resting">No</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">Live Distances</div>
+        <div class="card-body"><div id="dist-list"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">State History (30 frames)</div>
+        <div class="card-body"><div class="state-dots" id="state-history"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">How It Works</div>
+        <div class="card-body">
+          <details>
+            <summary>Detection Engine</summary>
+            <p><b>4-state machine + dual-signal scoring</b> on MediaPipe landmarks:</p>
+            <ul>
+              <li><b>IDLE</b> &mdash; Hand not near face</li>
+              <li><b>PROXIMITY</b> &mdash; Hand entered face region</li>
+              <li><b>DWELL</b> &mdash; Hand stayed near face &gt; 0.5s</li>
+              <li><b>BFRB</b> &mdash; Confirmed by multi-signal scoring (&ge; 55%)</li>
+            </ul>
+          </details>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">Event Log</div>
+        <div class="card-body"><div class="det-log" id="det-log"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HUD PAGE -->
+<div class="page-view" id="page-hud">
+  <div class="hud-stats-row">
+    <div class="stat-card"><div class="stat-value" id="hud-total-sessions">0</div><div class="stat-label">Total Sessions</div></div>
+    <div class="stat-card"><div class="stat-value danger" id="hud-total-detections">0</div><div class="stat-label">Total Detections</div></div>
+    <div class="stat-card"><div class="stat-value success" id="hud-accuracy">--%</div><div class="stat-label">Model Accuracy</div></div>
+    <div class="stat-card"><div class="stat-value warning" id="hud-feedback-count">0</div><div class="stat-label">Feedback Given</div></div>
+  </div>
+  <div class="hud-grid">
+    <div class="card"><div class="card-head">Daily Detections (Last 30 Days)</div><div class="card-body"><div class="chart-container"><canvas id="chart-daily"></canvas></div></div></div>
+    <div class="card"><div class="card-head">Detection by Type</div><div class="card-body"><div class="chart-container"><canvas id="chart-types"></canvas></div></div></div>
+    <div class="card"><div class="card-head">Current Session Timeline</div><div class="card-body"><div class="chart-container"><canvas id="chart-timeline"></canvas></div></div></div>
+    <div class="card"><div class="card-head">Feedback: Accurate vs False Alarms</div><div class="card-body"><div class="chart-container"><canvas id="chart-accuracy"></canvas></div></div></div>
+  </div>
+</div>
+
+<!-- HISTORY PAGE -->
+<div class="page-view" id="page-history">
+  <div style="padding:20px;">
+    <div class="card">
+      <div class="card-head">Session History <span class="badge badge-info" id="history-count">0 sessions</span></div>
+      <div class="card-body" style="padding:0;">
+        <table class="session-table">
+          <thead><tr><th>#</th><th>Date</th><th>Duration</th><th>Detections</th><th>Confirmed</th><th>Rejected</th><th>Types Monitored</th><th>Status</th></tr></thead>
+          <tbody id="session-table-body">
+            <tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:30px;">No sessions yet. Start a session to begin tracking.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  BFRB Detection System &mdash; ENEB453 Final Project &mdash; Nishanth S. &mdash; University of Maryland
+  &nbsp;|&nbsp; Stack: MediaPipe + IndexedDB + Chart.js &nbsp;|&nbsp; v3 Multi-Signal Engine
+</footer>
+
+<script>
+// =============================================================================
+// IndexedDB DATABASE LAYER (replaces Flask/SQLite for GitHub Pages)
+// =============================================================================
+const DB_NAME = "bfrb_detection";
+const DB_VERSION = 1;
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains("sessions")) {
+        const s = d.createObjectStore("sessions", { keyPath: "id", autoIncrement: true });
+        s.createIndex("start_time", "start_time");
+      }
+      if (!d.objectStoreNames.contains("detections")) {
+        const det = d.createObjectStore("detections", { keyPath: "id", autoIncrement: true });
+        det.createIndex("session_id", "session_id");
+        det.createIndex("bfrb_type", "bfrb_type");
+        det.createIndex("detected_at", "detected_at");
+      }
+      if (!d.objectStoreNames.contains("feedback")) {
+        const fb = d.createObjectStore("feedback", { keyPath: "id", autoIncrement: true });
+        fb.createIndex("session_id", "session_id");
+        fb.createIndex("detection_id", "detection_id");
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function dbAdd(store, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    const req = tx.objectStore(store).add(data);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbPut(store, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    const req = tx.objectStore(store).put(data);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGet(store, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const req = tx.objectStore(store).get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGetAll(store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGetByIndex(store, indexName, value) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const idx = tx.objectStore(store).index(indexName);
+    const req = idx.getAll(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbClearAll() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(["sessions", "detections", "feedback"], "readwrite");
+    tx.objectStore("sessions").clear();
+    tx.objectStore("detections").clear();
+    tx.objectStore("feedback").clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// =============================================================================
+// APP STATE
+// =============================================================================
+const APP = {
+  sessionId: null, sessionActive: false, sessionStartTime: null,
+  currentSession: null,
+  selectionMode: "multi",
+  selectedTypes: new Set(),
+  allTypes: [
+    { name: "Hair Pulling", category: "pulling" },
+    { name: "Nail Biting", category: "biting" },
+    { name: "Skin Picking", category: "picking" },
+    { name: "Nose Picking", category: "picking" },
+    { name: "Lip Picking", category: "picking" },
+    { name: "Face Touching", category: "touching" },
+    { name: "Forehead Touching", category: "touching" },
+    { name: "Cheek Touching", category: "touching" },
+  ],
+  notificationsEnabled: true,
+  pendingNotification: null,
+  detectionCooldown: false,
+  lastNotifTime: 0,
+  NOTIF_COOLDOWN_MS: 8000,
+  sessionDetections: [],
+  feedbackStats: { total: 0, accurate: 0 },
+  charts: {},
+};
+
+// Init
+APP.allTypes.forEach(t => APP.selectedTypes.add(t.name));
+openDB().then(() => showToast("Database ready", "success")).catch(() => showToast("DB init failed", "error"));
+
+// =============================================================================
+// TOAST
+// =============================================================================
+function showToast(msg, type = "info") {
+  const c = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = "toast " + type; t.textContent = msg; c.appendChild(t);
+  setTimeout(() => { t.style.opacity = "0"; t.style.transition = "opacity .3s"; }, 3000);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// =============================================================================
+// GLOBAL NOTIFICATION
+// =============================================================================
+function showBFRBNotification(bfrbType, confidence, detectionId) {
+  if (!APP.notificationsEnabled || !APP.sessionActive) return;
+  const now = Date.now();
+  if (now - APP.lastNotifTime < APP.NOTIF_COOLDOWN_MS) return;
+  APP.lastNotifTime = now;
+  APP.pendingNotification = { detectionId, bfrbType, confidence, shownAt: now };
+  document.getElementById("notif-bfrb-type").textContent = bfrbType;
+  document.getElementById("notif-sub").textContent = `Detected with ${Math.round(confidence*100)}% confidence - Please stop and take a moment.`;
+  document.getElementById("notification-overlay").classList.add("show");
+  if (Notification.permission === "granted") {
+    new Notification("BFRB Detected: " + bfrbType, { body: `Confidence: ${Math.round(confidence*100)}%. Take a moment to stop.`, requireInteraction: true });
+  }
+}
+
+function submitNotifFeedback(isAccurate) {
+  const notif = APP.pendingNotification;
+  if (!notif) { dismissNotif(); return; }
+  const responseTime = Date.now() - notif.shownAt;
+  dbAdd("feedback", {
+    detection_id: notif.detectionId, session_id: APP.sessionId,
+    is_accurate: isAccurate ? 1 : 0, bfrb_type: notif.bfrbType,
+    confidence_at: notif.confidence, response_time_ms: responseTime,
+    created_at: new Date().toISOString(),
+  }).then(() => {
+    // Update detection record
+    dbGet("detections", notif.detectionId).then(det => {
+      if (det) { det.user_confirmed = isAccurate ? 1 : 0; det.feedback_time = new Date().toISOString(); dbPut("detections", det); }
+    });
+    // Update session counters
+    if (APP.currentSession) {
+      if (isAccurate) APP.currentSession.total_confirmed++;
+      else APP.currentSession.total_rejected++;
+      dbPut("sessions", APP.currentSession);
+    }
+    APP.feedbackStats.total++;
+    if (isAccurate) APP.feedbackStats.accurate++;
+    updateAccuracyDisplay();
+    showToast(isAccurate ? "Feedback: Correct detection recorded" : "Feedback: False alarm recorded", isAccurate ? "success" : "warning");
+  });
+  dismissNotif();
+}
+
+function dismissNotif() {
+  document.getElementById("notification-overlay").classList.remove("show");
+  APP.pendingNotification = null;
+}
+
+// =============================================================================
+// NAVIGATION
+// =============================================================================
+document.querySelectorAll(".nav-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".page-view").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("page-" + tab.dataset.page).classList.add("active");
+    if (tab.dataset.page === "hud") loadHUDData();
+    if (tab.dataset.page === "history") loadHistory();
+  });
+});
+
+// =============================================================================
+// BFRB SELECTOR
+// =============================================================================
+const BFRB_ICONS = { "Hair Pulling":"&#128136;","Nail Biting":"&#128133;","Skin Picking":"&#9997;","Nose Picking":"&#128067;","Lip Picking":"&#128068;","Face Touching":"&#9995;","Forehead Touching":"&#128400;","Cheek Touching":"&#129303;" };
+
+function buildBFRBSelector() {
+  const c = document.getElementById("bfrb-options"); c.innerHTML = "";
+  APP.allTypes.forEach(t => {
+    const sel = APP.selectedTypes.has(t.name);
+    const d = document.createElement("div");
+    d.className = "bfrb-option" + (sel ? " selected" : ""); d.dataset.name = t.name;
+    d.innerHTML = `<div class="bfrb-check">${sel?"&#10003;":""}</div><div><div class="bfrb-name">${BFRB_ICONS[t.name]||"&#128073;"} ${t.name}</div><div class="bfrb-cat">${t.category}</div></div>`;
+    d.addEventListener("click", () => toggleBFRBType(t.name)); c.appendChild(d);
+  });
+}
+
+function toggleBFRBType(name) {
+  if (APP.selectionMode === "single") { APP.selectedTypes.clear(); APP.selectedTypes.add(name); }
+  else { if (APP.selectedTypes.has(name)) APP.selectedTypes.delete(name); else APP.selectedTypes.add(name); }
+  buildBFRBSelector();
+}
+
+function setSelectionMode(mode) {
+  APP.selectionMode = mode;
+  document.querySelectorAll(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  if (mode === "single" && APP.selectedTypes.size > 1) { const f = APP.selectedTypes.values().next().value; APP.selectedTypes.clear(); APP.selectedTypes.add(f); }
+  buildBFRBSelector();
+}
+
+buildBFRBSelector();
+
+// =============================================================================
+// SESSION MANAGEMENT
+// =============================================================================
+async function startSession() {
+  const session = {
+    input_type: "webcam", selected_types: [...APP.selectedTypes],
+    selection_mode: APP.selectionMode, start_time: new Date().toISOString(),
+    end_time: null, total_detections: 0, total_confirmed: 0, total_rejected: 0,
+  };
+  const id = await dbAdd("sessions", session);
+  session.id = id;
+  APP.sessionId = id; APP.sessionActive = true; APP.sessionStartTime = Date.now();
+  APP.currentSession = session; APP.sessionDetections = [];
+  detector.bfrbEvents = 0; detector.bfrbFrames = 0; detector.totalFrames = 0;
+  document.getElementById("btn-start").style.display = "none";
+  document.getElementById("btn-stop").style.display = "";
+  document.getElementById("session-indicator").className = "session-dot live";
+  document.getElementById("session-status-text").textContent = "Session #" + id;
+  showToast("Session started - monitoring " + APP.selectedTypes.size + " BFRB types", "success");
+  if (Notification.permission === "default") Notification.requestPermission();
+}
+
+async function stopSession() {
+  if (!APP.sessionId) return;
+  if (APP.currentSession) {
+    APP.currentSession.end_time = new Date().toISOString();
+    await dbPut("sessions", APP.currentSession);
+  }
+  showToast(`Session #${APP.sessionId} ended - ${detector.bfrbEvents} detections recorded`, "success");
+  APP.sessionActive = false; APP.sessionId = null; APP.sessionStartTime = null; APP.currentSession = null;
+  document.getElementById("btn-start").style.display = "";
+  document.getElementById("btn-stop").style.display = "none";
+  document.getElementById("session-indicator").className = "session-dot off";
+  document.getElementById("session-status-text").textContent = "No Session";
+}
+
+async function clearAllData() {
+  if (!confirm("Clear all stored sessions, detections, and feedback data?")) return;
+  await dbClearAll();
+  showToast("All data cleared", "warning");
+}
+
+setInterval(() => {
+  if (APP.sessionActive && APP.sessionStartTime) {
+    const el = Math.floor((Date.now() - APP.sessionStartTime) / 1000);
+    document.getElementById("stat-session-time").textContent = Math.floor(el/60) + ":" + String(el%60).padStart(2,"0");
+  }
+}, 1000);
+
+document.getElementById("chk-notif").addEventListener("change", e => { APP.notificationsEnabled = e.target.checked; });
+
+// =============================================================================
+// DETECTION ENGINE (v3)
+// =============================================================================
+const FACE = { NOSE_TIP:1,UPPER_LIP:13,LOWER_LIP:14,LEFT_CHEEK:234,RIGHT_CHEEK:454,FOREHEAD:10,CHIN:152,MOUTH_LEFT:78,MOUTH_RIGHT:308 };
+const HAND = { WRIST:0,THUMB_IP:3,THUMB_TIP:4,INDEX_MCP:5,INDEX_PIP:6,INDEX_TIP:8,MIDDLE_PIP:10,MIDDLE_TIP:12,RING_PIP:14,RING_TIP:16,PINKY_MCP:17,PINKY_PIP:18,PINKY_TIP:20 };
+
+const BFRB_TYPES = [
+  { name:"Nail Biting",landmarks:[HAND.INDEX_TIP,HAND.THUMB_TIP],face:FACE.UPPER_LIP,threshold:0.30 },
+  { name:"Nose Picking",landmarks:[HAND.INDEX_TIP],face:FACE.NOSE_TIP,threshold:0.28 },
+  { name:"Face Touching",landmarks:[HAND.WRIST,HAND.INDEX_TIP],face:FACE.NOSE_TIP,threshold:0.40 },
+  { name:"Forehead Touching",landmarks:[HAND.WRIST,HAND.INDEX_TIP],face:FACE.FOREHEAD,threshold:0.45 },
+  { name:"Cheek Touching",landmarks:[HAND.INDEX_TIP,HAND.THUMB_TIP],face:FACE.LEFT_CHEEK,threshold:0.32 },
+  { name:"Lip Picking",landmarks:[HAND.INDEX_TIP],face:FACE.LOWER_LIP,threshold:0.28 },
+];
+const PINCH_ZONES = [
+  { name:"Hair Pulling",face:FACE.FOREHEAD,zone:0.80 },{ name:"Hair Pulling",face:FACE.LEFT_CHEEK,zone:0.75 },
+  { name:"Skin Picking",face:FACE.LEFT_CHEEK,zone:0.55 },{ name:"Skin Picking",face:FACE.RIGHT_CHEEK,zone:0.55 },
+  { name:"Skin Picking",face:FACE.CHIN,zone:0.55 },{ name:"Skin Picking",face:FACE.NOSE_TIP,zone:0.45 },
+];
+
+class BFRBDetector {
+  constructor() {
+    this.PROXIMITY_RATIO=0.35;this.DWELL_MS=500;this.BFRB_MS=1000;this.EXIT_MS=300;this.VELOCITY_MAX=0.08;
+    this.EMA_ALPHA=0.25;this.EMA_VEL_ALPHA=0.20;
+    this.state="IDLE";this.proximityStart=null;this.exitStart=null;
+    this.smoothDist=1.0;this.smoothVel=0.0;this.smoothDistances={};
+    this.prevHandPos=null;this.stateHistory=[];
+    this.bfrbFrames=0;this.totalFrames=0;this.bfrbEvents=0;this.lastWasBFRB=false;
+    this.PINCH_THRESHOLD=0.20;this.CLUSTER_THRESHOLD=0.22;this.PULL_MIN_DIST=0.28;
+    this.pinchState="NONE";this.pinchFaceDist=null;this.pinchZoneLabel="";
+    this.smoothPinch=0;this.smoothCluster=0;this.EMA_PINCH=0.30;
+    this.pinchPullActive=false;this.pinchPullLabel="";this.pinchPullTimer=null;this.PINCH_PULL_HOLD=1200;
+    this.smoothMouthOpen=0;this.EMA_MOUTH=0.25;this.MOUTH_OPEN_THRESH=0.07;this.extendedCount=0;
+    this.MICRO_WINDOW=30;this.posHistory=[];this.microVariance=0;this.microReversals=0;
+    this.STATIC_VAR_THRESH=0.00002;this.PICK_VAR_MIN=0.00003;this.PICK_VAR_MAX=0.0005;this.REVERSAL_THRESH=0.30;
+    this.smoothApproachAngle=1.0;this.eatingLikely=false;this.restingLikely=false;
+    this.bfrbScore=0;this.BFRB_SCORE_THRESH=0.55;
+  }
+
+  update(hand,face,timestamp) {
+    this.totalFrames++;
+    if(!hand||!face||face.length<468){
+      this._tr("IDLE");this.proximityStart=null;this.exitStart=null;this.prevHandPos=null;
+      this.smoothDist=1.0;this.smoothVel=0.0;this.bfrbScore=0;
+      this.eatingLikely=false;this.restingLikely=false;this.pinchPullActive=false;this.pinchState="NONE";
+      this.stateHistory.push("idle");if(this.stateHistory.length>30)this.stateHistory.shift();
+      return this._res(null,null,null);
+    }
+    const fw=this._d(face[FACE.LEFT_CHEEK],face[FACE.RIGHT_CHEEK]);
+    if(fw<0.01)return this._res(null,null,null);
+
+    const pd=this._cpd(hand,face,fw);
+    const rawMin=Math.min(...Object.values(pd));
+    this.smoothDist=this.EMA_ALPHA*rawMin+(1-this.EMA_ALPHA)*this.smoothDist;
+    for(const[k,v]of Object.entries(pd)){if(!(k in this.smoothDistances))this.smoothDistances[k]=1.0;this.smoothDistances[k]=this.EMA_ALPHA*v+(1-this.EMA_ALPHA)*this.smoothDistances[k];}
+
+    let rawVel=0;if(this.prevHandPos)rawVel=this._d(hand[HAND.WRIST],this.prevHandPos);
+    this.smoothVel=this.EMA_VEL_ALPHA*rawVel+(1-this.EMA_VEL_ALPHA)*this.smoothVel;
+    this.prevHandPos={x:hand[HAND.WRIST].x,y:hand[HAND.WRIST].y};
+
+    const rp=this._gps(hand,fw),rc=this._gcs(hand,fw);
+    this.smoothPinch=this.EMA_PINCH*rp+(1-this.EMA_PINCH)*this.smoothPinch;
+    this.smoothCluster=this.EMA_PINCH*rc+(1-this.EMA_PINCH)*this.smoothCluster;
+    const isP=this.smoothPinch>this.PINCH_THRESHOLD,isC=this.smoothCluster>this.CLUSTER_THRESHOLD;
+
+    const m=this._gma(face,fw);
+    this.smoothMouthOpen=this.EMA_MOUTH*m.mo+(1-this.EMA_MOUTH)*this.smoothMouthOpen;
+    const mOpen=this.smoothMouthOpen>this.MOUTH_OPEN_THRESH;
+    this.extendedCount=this._gef(hand);const isOP=this.extendedCount>=4;
+    this._umm(hand);
+    const isSR=this.microVariance<this.STATIC_VAR_THRESH&&this.microReversals<0.15;
+    const isMO=this.microVariance>this.PICK_VAR_MIN&&this.microVariance<this.PICK_VAR_MAX&&this.microReversals>this.REVERSAL_THRESH;
+    const aa=this._gaa(hand,face);this.smoothApproachAngle=0.3*aa+0.7*this.smoothApproachAngle;
+    const ftf=this.smoothApproachAngle<0.6;
+    const wbm=hand[HAND.WRIST].y>face[FACE.UPPER_LIP].y;
+    const hnm=(this._d(hand[HAND.INDEX_TIP],face[FACE.UPPER_LIP])/fw)<0.35;
+    this.eatingLikely=mOpen&&hnm&&wbm;
+    this.restingLikely=isSR&&(isOP||(!isP&&!isC));
+
+    const isClose=this.smoothDist<this.PROXIMITY_RATIO,isSlow=this.smoothVel<this.VELOCITY_MAX;
+    this.bfrbScore=this._cbs({proximity:isClose,dwellTime:this.proximityStart&&(timestamp-this.proximityStart)>this.DWELL_MS,fingerCurl:this.extendedCount<=2,pinchStrength:isP||isC,microOscillation:isMO,notEating:!this.eatingLikely,notResting:!this.restingLikely,palmOrientation:ftf});
+
+    if(!this.pinchPullActive){
+      if(this.pinchState==="NONE"){if(isP||isC){const z=this._npz(hand,face,fw);if(z){this.pinchState="PINCHED";this.pinchFaceDist=this.smoothDist;this.pinchZoneLabel=z;}}}
+      else if(this.pinchState==="PINCHED"){if(!isP&&!isC){this.pinchState="NONE";this.pinchFaceDist=null;this.pinchZoneLabel="";}else{const pull=this.smoothDist-this.pinchFaceDist;if(pull>this.PULL_MIN_DIST){this.pinchPullActive=true;this.pinchPullLabel=this.pinchZoneLabel;this.pinchPullTimer=timestamp;this.bfrbEvents++;this.pinchState="NONE";this.pinchFaceDist=null;}}}
+    } else { if(timestamp-this.pinchPullTimer>this.PINCH_PULL_HOLD){this.pinchPullActive=false;this.pinchPullLabel="";this.pinchPullTimer=null;} }
+
+    const bfrbType=this.pinchPullActive?this.pinchPullLabel:this._ct(hand,face,fw);
+
+    switch(this.state){
+      case"IDLE":if(isClose){this.state="PROXIMITY";this.proximityStart=timestamp;this.exitStart=null;}break;
+      case"PROXIMITY":if(!isClose){this.state="IDLE";this.proximityStart=null;}else if(timestamp-this.proximityStart>=this.DWELL_MS)this.state="DWELL";break;
+      case"DWELL":if(!isClose){this.state="IDLE";this.proximityStart=null;}else if(isSlow&&timestamp-this.proximityStart>=this.BFRB_MS&&this.bfrbScore>=this.BFRB_SCORE_THRESH&&!this.eatingLikely&&!this.restingLikely){this.state="BFRB";if(!this.lastWasBFRB)this.bfrbEvents++;}break;
+      case"BFRB":if(this.eatingLikely||this.restingLikely){this.state="DWELL";this.exitStart=null;}else if(!isClose){if(!this.exitStart)this.exitStart=timestamp;if(timestamp-this.exitStart>=this.EXIT_MS){this.state="IDLE";this.proximityStart=null;this.exitStart=null;}}else{this.exitStart=null;if(this.bfrbScore<this.BFRB_SCORE_THRESH*0.8)this.state="DWELL";}break;
+    }
+
+    const isBFRB=this.state==="BFRB"||this.pinchPullActive;
+    if(isBFRB)this.bfrbFrames++;this.lastWasBFRB=isBFRB;
+    const hs=this.pinchPullActive?"bfrb":this.pinchState==="PINCHED"?"pinch":this.state.toLowerCase();
+    this.stateHistory.push(hs);if(this.stateHistory.length>30)this.stateHistory.shift();
+
+    let conf=0;
+    if(this.state==="BFRB")conf=Math.min(1,(timestamp-this.proximityStart)/(this.BFRB_MS*1.5));
+    else if(this.state==="DWELL")conf=(timestamp-this.proximityStart-this.DWELL_MS)/(this.BFRB_MS-this.DWELL_MS)*0.6;
+    else if(this.state==="PROXIMITY")conf=(timestamp-this.proximityStart)/this.DWELL_MS*0.25;
+    let dp=0;if(this.proximityStart)dp=Math.min(1,(timestamp-this.proximityStart)/this.BFRB_MS);
+
+    return this._res(bfrbType,conf,dp,{...pd});
+  }
+
+  _cpd(h,f,fw){const n=(a,b)=>this._d(a,b)/fw;return{"Wrist->Nose":n(h[HAND.WRIST],f[FACE.NOSE_TIP]),"Index->Mouth":n(h[HAND.INDEX_TIP],f[FACE.UPPER_LIP]),"Index->Nose":n(h[HAND.INDEX_TIP],f[FACE.NOSE_TIP]),"Index->Cheek":n(h[HAND.INDEX_TIP],f[FACE.LEFT_CHEEK]),"Grab->Forehead":n({x:(h[4].x+h[8].x)/2,y:(h[4].y+h[8].y)/2},f[FACE.FOREHEAD])};}
+
+  _gps(h,fw){const a=this._d(h[HAND.THUMB_TIP],h[HAND.INDEX_TIP])/fw,b=this._d(h[HAND.THUMB_TIP],h[HAND.MIDDLE_TIP])/fw;return Math.max(0,Math.min(1,1-(Math.min(a,b)-0.05)/0.30));}
+
+  _gcs(h,fw){const t=[h[HAND.THUMB_TIP],h[HAND.INDEX_TIP],h[HAND.MIDDLE_TIP],h[HAND.RING_TIP],h[HAND.PINKY_TIP]];const cx=t.reduce((s,p)=>s+p.x,0)/5,cy=t.reduce((s,p)=>s+p.y,0)/5;const sp=t.reduce((s,p)=>s+this._d(p,{x:cx,y:cy}),0)/5/fw;return Math.max(0,Math.min(1,1-(sp-0.04)/0.21));}
+
+  _npz(h,f,fw){const gx=(h[HAND.INDEX_TIP].x+h[HAND.THUMB_TIP].x)/2,gy=(h[HAND.INDEX_TIP].y+h[HAND.THUMB_TIP].y)/2;for(const z of PINCH_ZONES){if(this._d({x:gx,y:gy},f[z.face])/fw<z.zone)return z.name;}return null;}
+
+  _ct(h,f,fw){let best=null,bd=Infinity;for(const t of BFRB_TYPES){if(!APP.selectedTypes.has(t.name))continue;for(const l of t.landmarks){const d=this._d(h[l],f[t.face])/fw;if(d<bd){bd=d;if(d<t.threshold)best=t.name;}}}return best;}
+
+  _gma(f,fw){return{mo:this._d(f[FACE.UPPER_LIP],f[FACE.LOWER_LIP])/fw,mw:this._d(f[FACE.MOUTH_LEFT],f[FACE.MOUTH_RIGHT])/fw};}
+
+  _gef(h){const d=(a,b)=>this._d(a,b);return[d(h[HAND.THUMB_TIP],h[HAND.INDEX_MCP])>d(h[HAND.THUMB_IP],h[HAND.INDEX_MCP])*1.2,d(h[HAND.INDEX_TIP],h[HAND.WRIST])>d(h[HAND.INDEX_PIP],h[HAND.WRIST]),d(h[HAND.MIDDLE_TIP],h[HAND.WRIST])>d(h[HAND.MIDDLE_PIP],h[HAND.WRIST]),d(h[HAND.RING_TIP],h[HAND.WRIST])>d(h[HAND.RING_PIP],h[HAND.WRIST]),d(h[HAND.PINKY_TIP],h[HAND.WRIST])>d(h[HAND.PINKY_PIP],h[HAND.WRIST])].filter(Boolean).length;}
+
+  _umm(h){this.posHistory.push({x:h[HAND.INDEX_TIP].x,y:h[HAND.INDEX_TIP].y});if(this.posHistory.length>this.MICRO_WINDOW)this.posHistory.shift();if(this.posHistory.length<5)return;const mx=this.posHistory.reduce((s,p)=>s+p.x,0)/this.posHistory.length,my=this.posHistory.reduce((s,p)=>s+p.y,0)/this.posHistory.length;this.microVariance=this.posHistory.reduce((s,p)=>s+(p.x-mx)**2+(p.y-my)**2,0)/this.posHistory.length;let r=0;for(let i=2;i<this.posHistory.length;i++){const dx1=this.posHistory[i-1].x-this.posHistory[i-2].x,dx2=this.posHistory[i].x-this.posHistory[i-1].x,dy1=this.posHistory[i-1].y-this.posHistory[i-2].y,dy2=this.posHistory[i].y-this.posHistory[i-1].y;if(dx1*dx2<0||dy1*dy2<0)r++;}this.microReversals=r/(this.posHistory.length-2);}
+
+  _gaa(h,f){const fd={x:h[HAND.MIDDLE_TIP].x-h[HAND.WRIST].x,y:h[HAND.MIDDLE_TIP].y-h[HAND.WRIST].y},nd={x:f[FACE.NOSE_TIP].x-h[HAND.WRIST].x,y:f[FACE.NOSE_TIP].y-h[HAND.WRIST].y};const dot=fd.x*nd.x+fd.y*nd.y,m1=Math.sqrt(fd.x**2+fd.y**2),m2=Math.sqrt(nd.x**2+nd.y**2);return Math.acos(Math.max(-1,Math.min(1,dot/(m1*m2+1e-8))));}
+
+  _cbs(s){const w={proximity:.18,dwellTime:.15,fingerCurl:.12,pinchStrength:.12,microOscillation:.13,notEating:.15,notResting:.10,palmOrientation:.05};let sc=0;for(const k in w)if(s[k])sc+=w[k];return sc;}
+
+  _d(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);}
+  _tr(s){if(this.state!==s)this.state=s;}
+
+  _res(bt,conf,dp,dist){
+    const isBFRB=this.state==="BFRB"||this.pinchPullActive;
+    return{state:isBFRB?"BFRB":this.state,bfrbType:bt||"",confidence:this.pinchPullActive?1:(conf||0),dwellProgress:dp||0,isBFRB,isPinchPull:this.pinchPullActive,pinchStrength:this.smoothPinch,clusterStrength:this.smoothCluster,pinchState:this.pinchState,distances:dist||{},smoothDist:this.smoothDist,smoothVel:this.smoothVel,bfrbScore:this.bfrbScore,eatingLikely:this.eatingLikely,restingLikely:this.restingLikely,extendedCount:this.extendedCount,mouthOpen:this.smoothMouthOpen,stateHistory:[...this.stateHistory],stats:{totalFrames:this.totalFrames,bfrbFrames:this.bfrbFrames,bfrbEvents:this.bfrbEvents,bfrbPct:this.totalFrames>0?(this.bfrbFrames/this.totalFrames*100).toFixed(0):0}};
+  }
+}
+
+// =============================================================================
+// UI UPDATE
+// =============================================================================
+const detector=new BFRBDetector();
+let fpsCounter=0,lastFpsTime=Date.now();
+
+function updateUI(result){
+  const s=result.state,isBFRB=result.isBFRB;
+  document.getElementById("border-flash").className="border-flash"+(isBFRB?" bfrb":s==="DWELL"||s==="PROXIMITY"?" suspicious":"");
+
+  const badge=document.getElementById("state-badge");
+  let bt,bc;
+  if(result.isPinchPull){bt="PINCH-PULL: "+(result.bfrbType||"BFRB");bc="bfrb";}
+  else if(result.eatingLikely){bt="Eating (filtered)";bc="eating";}
+  else if(result.restingLikely&&(s==="DWELL"||s==="PROXIMITY")){bt="Resting (filtered)";bc="resting";}
+  else{bt={IDLE:"No BFRB",PROXIMITY:"Hand Near Face",DWELL:"Hand Lingering...",BFRB:"BFRB DETECTED"}[s]||s;bc=s.toLowerCase();}
+  badge.className="state-badge "+bc;badge.textContent=bt;
+
+  const dw=document.getElementById("dwell-wrap"),df=document.getElementById("dwell-fill"),dl=document.getElementById("dwell-label");
+  if(s==="IDLE")dw.classList.remove("visible");
+  else{dw.classList.add("visible");const p=(result.dwellProgress*100).toFixed(0);df.style.width=p+"%";df.style.background=isBFRB?"var(--danger)":s==="DWELL"?"#ea580c":"var(--warning)";dl.textContent=result.isPinchPull?(result.bfrbType||"Pinch-Pull"):result.pinchState==="PINCHED"?"Pinch detected - pull to confirm":"Dwell: "+p+"%";}
+
+  const to=document.getElementById("bfrb-type-overlay");
+  if(isBFRB&&result.bfrbType){to.textContent=result.bfrbType;to.classList.add("visible");}else to.classList.remove("visible");
+
+  const pl=document.getElementById("pred-label"),tl=document.getElementById("bfrb-type-label");
+  pl.className="pred-label "+(isBFRB?"bfrb":s!=="IDLE"?"no-bfrb":"waiting");
+  pl.textContent=isBFRB?"BFRB Detected":s==="DWELL"?"Possible BFRB...":s==="PROXIMITY"?"Hand Near Face":"No BFRB";
+  tl.textContent=isBFRB&&result.bfrbType?result.bfrbType:"";
+
+  const cp=(result.confidence*100).toFixed(0);
+  document.getElementById("conf-text").textContent=cp+"%";
+  const cf=document.getElementById("conf-fill");cf.style.width=cp+"%";
+  cf.className="conf-fill"+(isBFRB?" high":result.confidence>0.3?" med":" low");
+
+  const sb=document.getElementById("status-badge");sb.textContent=isBFRB?"BFRB!":"Monitoring";sb.className="badge "+(isBFRB?"badge-live":"badge-info");
+
+  const sm=document.getElementById("sig-mouth");sm.textContent=result.mouthOpen>0.07?"Open":"Closed";sm.className="s-value "+(result.eatingLikely?"active":"ok");
+  document.getElementById("sig-fingers").textContent=result.extendedCount+"/5";
+  const se=document.getElementById("sig-eating");se.textContent=result.eatingLikely?"EATING":"No";se.className="s-value "+(result.eatingLikely?"active":"ok");
+  const sr=document.getElementById("sig-resting");sr.textContent=result.restingLikely?"RESTING":"No";sr.className="s-value "+(result.restingLikely?"active":"ok");
+
+  document.getElementById("stat-detections").textContent=result.stats.bfrbEvents;
+  document.getElementById("stat-pct").textContent=result.stats.bfrbPct+"%";
+  const sc=document.getElementById("stat-score");sc.textContent=(result.bfrbScore*100).toFixed(0)+"%";sc.className="stat-value"+(isBFRB?" danger":"");
+
+  fpsCounter++;const now=Date.now();
+  if(now-lastFpsTime>=1000){document.getElementById("stat-fps").textContent=fpsCounter;fpsCounter=0;lastFpsTime=now;}
+
+  updateDistBars(result.distances);
+  updateStateHistory(result.stateHistory);
+
+  // LOG TO DATABASE
+  if(isBFRB&&result.bfrbType&&APP.sessionActive&&!APP.detectionCooldown&&APP.selectedTypes.has(result.bfrbType)){
+    APP.detectionCooldown=true;
+    const tsMs=APP.sessionStartTime?Date.now()-APP.sessionStartTime:0;
+    const det={session_id:APP.sessionId,bfrb_type:result.bfrbType,frame_number:result.stats.totalFrames,timestamp_ms:tsMs,confidence_score:result.confidence,smoothed_distance:result.smoothDist,bfrb_score:result.bfrbScore,user_confirmed:null,feedback_time:null,detected_at:new Date().toISOString()};
+    dbAdd("detections",det).then(id=>{
+      det.id=id;
+      addDetectionLog(result.bfrbType,result.confidence);
+      APP.sessionDetections.push({id,type:result.bfrbType,confidence:result.confidence,timestamp_ms:tsMs});
+      if(APP.currentSession){APP.currentSession.total_detections++;dbPut("sessions",APP.currentSession);}
+      showBFRBNotification(result.bfrbType,result.confidence,id);
+    });
+    setTimeout(()=>{APP.detectionCooldown=false;},3000);
+  }
+}
+
+function updateDistBars(distances){
+  const c=document.getElementById("dist-list");
+  if(c.children.length===0){Object.keys(distances).forEach(name=>{const d=document.createElement("div");d.className="dist-item";const k=name.replace(/[^a-z0-9]/gi,'_');d.innerHTML=`<div class="dist-head"><span>${name}</span><span id="dv-${k}">&mdash;</span></div><div class="dist-track"><div class="dist-fill" id="db-${k}" style="width:0%"></div></div>`;c.appendChild(d);});}
+  for(const[name,val]of Object.entries(distances)){const k=name.replace(/[^a-z0-9]/gi,'_'),v=document.getElementById("dv-"+k),b=document.getElementById("db-"+k);if(!v||!b)continue;v.textContent=val.toFixed(3);const p=Math.min(val*80,100);b.style.width=Math.max(4,100-p)+"%";b.style.background=`hsl(${Math.round(p*1.4)},70%,50%)`;}
+}
+
+function updateStateHistory(history){
+  const c=document.getElementById("state-history");
+  if(c.children.length!==30){c.innerHTML="";for(let i=0;i<30;i++){const d=document.createElement("div");d.className="sdot idle";c.appendChild(d);}}
+  const dots=c.children;history.forEach((s,i)=>{if(dots[i])dots[i].className="sdot "+(s||"idle");});
+}
+
+function addDetectionLog(type,conf){
+  const log=document.getElementById("det-log"),e=document.createElement("div");e.className="det-entry";
+  const hi=conf>0.7,t=new Date().toLocaleTimeString();
+  e.innerHTML=`<div class="det-dot ${hi?'high':'med'}"></div><div class="det-body"><div class="det-name">${type}</div><div class="det-time">${t}</div></div><div class="det-conf" style="color:${hi?'var(--danger)':'var(--warning)'}">${(conf*100).toFixed(0)}%</div>`;
+  log.prepend(e);while(log.children.length>20)log.removeChild(log.lastChild);
+}
+
+function updateAccuracyDisplay(){
+  const el=document.getElementById("stat-accuracy");
+  if(APP.feedbackStats.total>0)el.textContent=Math.round(APP.feedbackStats.accurate/APP.feedbackStats.total*100)+"%";
+}
+
+// =============================================================================
+// HUD CHARTS
+// =============================================================================
+const CC={primary:'#6366f1',danger:'#ef4444',success:'#22c55e',warning:'#f59e0b',info:'#3b82f6',purple:'#8b5cf6',pink:'#ec4899',cyan:'#06b6d4'};
+
+async function loadHUDData(){
+  const [sessions,detections,feedback]=await Promise.all([dbGetAll("sessions"),dbGetAll("detections"),dbGetAll("feedback")]);
+
+  document.getElementById("hud-total-sessions").textContent=sessions.length;
+  document.getElementById("hud-total-detections").textContent=detections.length;
+  document.getElementById("hud-feedback-count").textContent=feedback.length;
+  const acc=feedback.length>0?Math.round(feedback.filter(f=>f.is_accurate===1).length/feedback.length*100):0;
+  document.getElementById("hud-accuracy").textContent=acc+"%";
+
+  // Daily chart
+  const daily={};detections.forEach(d=>{const day=(d.detected_at||"").slice(0,10);if(day){daily[day]=(daily[day]||0)+1;}});
+  const dLabels=Object.keys(daily).sort(),dData=dLabels.map(k=>daily[k]);
+  buildChart("chart-daily","bar",dLabels,[{label:"Detections",data:dData,backgroundColor:CC.primary+"99",borderColor:CC.primary,borderWidth:1,borderRadius:4}],{legend:false});
+
+  // Type chart
+  const types={};detections.forEach(d=>{types[d.bfrb_type]=(types[d.bfrb_type]||0)+1;});
+  const tLabels=Object.keys(types),tData=tLabels.map(k=>types[k]);
+  const colors=[CC.danger,CC.warning,CC.primary,CC.success,CC.purple,CC.pink,CC.cyan,CC.info];
+  buildDoughnut("chart-types",tLabels,tData,colors);
+
+  // Timeline
+  const td=APP.sessionDetections.map(d=>({x:(d.timestamp_ms/1000).toFixed(1),y:d.confidence}));
+  buildChart("chart-timeline","scatter",[],[{label:"Detections",data:td,backgroundColor:CC.danger+"cc",borderColor:CC.danger,pointRadius:6}],{legend:false,xTitle:"Time (s)",yTitle:"Confidence",yMin:0,yMax:1});
+
+  // Accuracy by type
+  const accByType={};detections.forEach(d=>{if(!accByType[d.bfrb_type])accByType[d.bfrb_type]={confirmed:0,rejected:0};if(d.user_confirmed===1)accByType[d.bfrb_type].confirmed++;else if(d.user_confirmed===0)accByType[d.bfrb_type].rejected++;});
+  const aLabels=Object.keys(accByType);
+  buildChart("chart-accuracy","bar",aLabels,[{label:"Confirmed",data:aLabels.map(k=>accByType[k].confirmed),backgroundColor:CC.success+"cc",borderRadius:4},{label:"False Alarm",data:aLabels.map(k=>accByType[k].rejected),backgroundColor:CC.danger+"cc",borderRadius:4}],{stacked:true});
+}
+
+function buildChart(id,type,labels,datasets,opts={}){
+  const ctx=document.getElementById(id);
+  if(APP.charts[id])APP.charts[id].destroy();
+  APP.charts[id]=new Chart(ctx,{type,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:opts.legend!==false,labels:{color:"#e4e6ed",font:{size:11}}}},scales:type==="doughnut"?{}:{x:{grid:{color:"#2d314222"},ticks:{color:"#8b8fa3",font:{size:10}},stacked:!!opts.stacked,title:opts.xTitle?{display:true,text:opts.xTitle,color:"#8b8fa3"}:undefined},y:{grid:{color:"#2d314222"},ticks:{color:"#8b8fa3"},stacked:!!opts.stacked,beginAtZero:true,min:opts.yMin,max:opts.yMax,title:opts.yTitle?{display:true,text:opts.yTitle,color:"#8b8fa3"}:undefined}}}});
+}
+
+function buildDoughnut(id,labels,data,colors){
+  const ctx=document.getElementById(id);
+  if(APP.charts[id])APP.charts[id].destroy();
+  APP.charts[id]=new Chart(ctx,{type:"doughnut",data:{labels,datasets:[{data,backgroundColor:colors.slice(0,data.length),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:"#e4e6ed",font:{size:11},padding:12}}}}});
+}
+
+// =============================================================================
+// HISTORY
+// =============================================================================
+async function loadHistory(){
+  const sessions=await dbGetAll("sessions");
+  sessions.sort((a,b)=>(b.start_time||"").localeCompare(a.start_time||""));
+  document.getElementById("history-count").textContent=sessions.length+" sessions";
+  const tbody=document.getElementById("session-table-body");
+  if(!sessions.length){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:30px;">No sessions yet.</td></tr>';return;}
+  tbody.innerHTML=sessions.map(s=>{
+    const live=!s.end_time;let dur="--";
+    if(s.start_time&&s.end_time){const d=(new Date(s.end_time)-new Date(s.start_time))/1000;dur=Math.floor(d/60)+"m "+Math.floor(d%60)+"s";}
+    let types=(s.selected_types||[]).join(", ")||"All";if(types.length>40)types=types.slice(0,37)+"...";
+    return`<tr><td>${s.id}</td><td>${(s.start_time||"--").replace("T"," ").slice(0,19)}</td><td>${dur}</td><td>${s.total_detections||0}</td><td style="color:var(--success)">${s.total_confirmed||0}</td><td style="color:var(--danger)">${s.total_rejected||0}</td><td style="font-size:11px;color:var(--text-dim)">${types}</td><td><span class="pill ${live?'pill-live':'pill-done'}">${live?"LIVE":"Done"}</span></td></tr>`;
+  }).join("");
+}
+
+// =============================================================================
+// MEDIAPIPE
+// =============================================================================
+const holistic=new Holistic({locateFile:f=>"https://cdn.jsdelivr.net/npm/@mediapipe/holistic/"+f});
+holistic.setOptions({modelComplexity:1,smoothLandmarks:true,enableSegmentation:false,refineFaceLandmarks:false,minDetectionConfidence:0.55,minTrackingConfidence:0.55});
+
+const canvas=document.getElementById("output_canvas"),ctx=canvas.getContext("2d"),videoEl=document.getElementById("input_video");
+
+holistic.onResults(results=>{
+  canvas.width=results.image.width;canvas.height=results.image.height;
+  ctx.save();ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(results.image,0,0);
+  const hand=results.rightHandLandmarks||results.leftHandLandmarks||null;
+  const face=results.faceLandmarks||null;
+  if(face)drawConnectors(ctx,face,FACEMESH_FACE_OVAL,{color:"rgba(99,102,241,.3)",lineWidth:1});
+  if(hand){const isBFRB=detector.state==="BFRB"||detector.pinchPullActive;const c=isBFRB?"#ef4444":detector.state==="DWELL"?"#ea580c":"#22c55e";drawConnectors(ctx,hand,HAND_CONNECTIONS,{color:c,lineWidth:2});drawLandmarks(ctx,hand,{color:"#fff",fillColor:c,lineWidth:1,radius:3});}
+  ctx.restore();
+  if(!hand){detector.update(null,face,Date.now());document.getElementById("state-badge").className="state-badge nohand";document.getElementById("state-badge").textContent="No hand detected";document.getElementById("border-flash").className="border-flash";document.getElementById("pred-label").className="pred-label waiting";document.getElementById("pred-label").textContent="Waiting for hand...";document.getElementById("bfrb-type-label").textContent="";document.getElementById("stat-score").textContent="0%";document.getElementById("sig-eating").textContent="No";document.getElementById("sig-eating").className="s-value ok";document.getElementById("sig-resting").textContent="No";document.getElementById("sig-resting").className="s-value ok";return;}
+  updateUI(detector.update(hand,face,Date.now()));
+});
+
+const camera=new Camera(videoEl,{onFrame:async()=>{await holistic.send({image:videoEl});},width:1280,height:720});
+camera.start().then(()=>{showToast("Camera ready - detection engine active","success");document.getElementById("state-badge").textContent="Show your hand";document.getElementById("state-badge").className="state-badge idle";}).catch(err=>{showToast("Camera error: "+err.message,"error");document.getElementById("state-badge").textContent="Camera access denied";});
+</script>
+</body>
+</html>

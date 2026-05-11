@@ -1,0 +1,1001 @@
+================================================================================
+  ENEB453 FINAL PROJECT - FULL DOCUMENTATION
+  BFRB Detection System: Real-Time Webcam-Based Body-Focused
+  Repetitive Behavior Detection Using Computer Vision & Machine Learning
+
+  Author: Nishanth S.
+  Course: ENEB453 - Web-Based Application Development
+  University of Maryland | Spring 2026
+  GitHub: github.com/Nishanth3424/bfrb-detection-eneb453
+================================================================================
+
+TABLE OF CONTENTS
+  1.  What is this project?
+  2.  What are BFRBs?
+  3.  Why does this matter?
+  4.  How the system works (high-level)
+  5.  Technology stack
+  6.  Database design (detailed)
+  7.  Backend architecture (Flask API)
+  8.  Authentication system
+  9.  Onboarding questionnaire
+  10. Detection pipeline (the core algorithm)
+  11. Machine learning pipeline (detailed)
+  12. Feature engineering (the math)
+  13. Late multimodal fusion (the math)
+  14. Adaptive threshold calibration (the math)
+  15. The BFRB score formula
+  16. State machine (IDLE -> PROXIMITY -> DWELL -> BFRB)
+  17. False positive filtering
+  18. Frontend UI architecture
+  19. Real-time WebSocket transport
+  20. Bout detection (clinical analytics)
+  21. Pilot study mode
+  22. Progressive Web App (PWA)
+  23. Key terms glossary
+  24. What I learned
+  25. Challenges and how I solved them
+
+================================================================================
+1. WHAT IS THIS PROJECT?
+================================================================================
+
+This is a complete web application that uses your webcam to detect when you are
+engaging in Body-Focused Repetitive Behaviors (BFRBs) in real time. When the
+system detects a BFRB (like nail biting, hair pulling, or skin picking), it
+alerts you so you can become aware of the behavior and stop.
+
+The application is a full-stack web app built with:
+  - Python Flask backend (server)
+  - SQLite database (data storage)
+  - HTML/CSS/JavaScript frontend (user interface)
+  - MediaPipe Holistic (computer vision for face + hand tracking)
+  - scikit-learn Random Forest (machine learning classifier)
+
+The app runs locally on your computer. You open http://localhost:5000 in your
+browser, sign in, and start a detection session. The camera turns on, and the
+system continuously tracks your face and hands using MediaPipe. When it detects
+that your hand is near your face in a BFRB-like pattern, it triggers an alert.
+
+Total codebase: ~4,800 lines of code
+  - app.py: 1,350 lines (Flask backend)
+  - index.html: 3,300+ lines (frontend with embedded CSS/JS)
+  - login.html: 280 lines (authentication page)
+
+================================================================================
+2. WHAT ARE BFRBs?
+================================================================================
+
+BFRB stands for Body-Focused Repetitive Behavior. These are a group of
+compulsive self-grooming behaviors where a person repeatedly touches, pulls,
+picks at, or bites their own body. The most common BFRBs are:
+
+  - Trichotillomania (hair pulling): pulling hair from scalp, eyebrows, eyelashes
+  - Onychophagia (nail biting): biting fingernails or surrounding skin
+  - Excoriation (skin picking): picking, scratching, or squeezing skin
+  - Rhinotillexomania (nose picking): compulsive nose picking
+  - Lip picking/biting: repetitive picking or biting of lips
+
+Our system detects 8 BFRB types:
+  1. Hair Pulling
+  2. Nail Biting
+  3. Skin Picking
+  4. Nose Picking
+  5. Lip Picking
+  6. Face Touching
+  7. Forehead Touching
+  8. Cheek Touching
+
+Key facts about BFRBs:
+  - Affect 2-5% of the general population (millions of people worldwide)
+  - Often happen unconsciously (the person doesn't realize they're doing it)
+  - Triggered by stress, anxiety, boredom, deep concentration, or tiredness
+  - Can cause physical damage (bald patches, scarred skin, bleeding cuticles)
+  - Treatment includes Cognitive Behavioral Therapy (CBT) + awareness training
+  - The FIRST step in treatment is always AWARENESS — knowing when it happens
+
+This is exactly what our system provides: real-time awareness.
+
+================================================================================
+3. WHY DOES THIS MATTER?
+================================================================================
+
+Current solutions for BFRB management are limited:
+  - Rubber bands on wrist (snap when you catch yourself) — requires self-awareness
+  - Paper journals (track episodes manually) — tedious, delayed, incomplete
+  - Therapy sessions (1 hour/week) — can't monitor the other 167 hours
+
+Our system fills the gap:
+  - Automatic detection (no need to catch yourself)
+  - Real-time alerts (immediate awareness)
+  - Data tracking (see patterns: when, how often, which behaviors)
+  - Quantified improvement (track reduction over time)
+  - Privacy-first (video never leaves your device — all CV runs in browser)
+
+================================================================================
+4. HOW THE SYSTEM WORKS (HIGH-LEVEL)
+================================================================================
+
+Step-by-step flow:
+
+  1. User opens http://localhost:5000 in their browser
+  2. User signs in (or creates a new account)
+  3. New users complete an onboarding questionnaire
+  4. User clicks "Start Session" on the dashboard
+  5. Browser requests camera permission
+  6. MediaPipe Holistic loads and begins tracking:
+     - 468 face landmarks (mouth, nose, cheeks, forehead, chin, etc.)
+     - 21 hand landmarks (wrist, all finger joints and tips)
+  7. Every frame (~30 times per second):
+     a. Landmarks are smoothed with One Euro Filter
+     b. 13 face zones are computed from landmark clusters
+     c. Hand pose is classified (pinch, fist, pointing, open, curled)
+     d. Distances from hand to each face zone are calculated
+     e. A multi-signal BFRB score is computed (0.0 to 1.0)
+     f. The 4-state machine progresses (IDLE -> PROXIMITY -> DWELL -> BFRB)
+     g. ML classifier runs on a 1.5-second sliding window of features
+     h. Rule score and ML score are fused (60% ML / 40% rule)
+     i. If BFRB is detected, an alert appears on screen
+  8. User can confirm or deny each detection (feedback)
+  9. User clicks "Stop Session" when done
+  10. Session data is saved (detections, feedback, telemetry)
+  11. User can view charts, export CSV, review history
+
+================================================================================
+5. TECHNOLOGY STACK
+================================================================================
+
+BACKEND:
+  - Python 3.11: main programming language
+  - Flask 2.3: lightweight web framework for HTTP routes
+  - Flask-SocketIO 5.3: WebSocket support for real-time ML predictions
+  - SQLite 3: embedded relational database (zero configuration)
+  - scikit-learn 1.3: ML model training and inference
+  - joblib: model serialization (saving/loading .pkl files)
+  - NumPy: numerical operations for ML feature processing
+
+FRONTEND:
+  - HTML5: page structure
+  - CSS3: styling (custom CSS variables for theming)
+  - Vanilla JavaScript (ES6+): all interactivity, no frameworks
+  - MediaPipe Holistic: Google's ML-based face + hand tracking (runs in browser)
+  - Chart.js 4.4: charts and data visualization
+  - Socket.IO client: WebSocket connection to Flask backend
+
+WHY THESE CHOICES:
+  - Flask over Django: lightweight, minimal boilerplate, perfect for single-app
+  - SQLite over MySQL: zero config, no Docker needed, single-file database
+  - Vanilla JS over React: no build step, simpler deployment, smaller bundle
+  - MediaPipe over OpenCV: runs in browser (privacy), pre-trained, real-time
+  - Random Forest over neural network: tabular features, interpretable, fast
+
+================================================================================
+6. DATABASE DESIGN (DETAILED)
+================================================================================
+
+The database uses Third Normal Form (3NF) normalization. This means:
+  - Every table has a primary key
+  - No partial dependencies (every non-key column depends on the whole PK)
+  - No transitive dependencies (non-key columns don't depend on other non-key columns)
+
+9 TABLES:
+
+TABLE: users
+  Purpose: Store user accounts
+  Columns:
+    id              INTEGER PRIMARY KEY AUTOINCREMENT
+    username        TEXT NOT NULL UNIQUE
+    email           TEXT NOT NULL UNIQUE
+    password_hash   TEXT NOT NULL     (SHA-256 salted hash, NOT plaintext)
+    full_name       TEXT
+    onboarding_complete  INTEGER (0 or 1)
+    created_at      TEXT (ISO datetime)
+
+TABLE: onboarding_responses
+  Purpose: Store answers to the setup questionnaire
+  Columns:
+    id              INTEGER PRIMARY KEY AUTOINCREMENT
+    user_id         INTEGER NOT NULL (FK -> users.id)
+    question_key    TEXT NOT NULL (e.g., "bfrbs", "frequency", "triggers")
+    response        TEXT NOT NULL (JSON-encoded value)
+    created_at      TEXT
+
+TABLE: bfrb_types
+  Purpose: Catalog of all BFRB behavior types
+  Columns:
+    id              INTEGER PRIMARY KEY AUTOINCREMENT
+    name            TEXT NOT NULL UNIQUE (e.g., "Hair Pulling")
+    description     TEXT (clinical description)
+    category        TEXT (pulling, biting, picking, touching)
+    is_custom       INTEGER (0 = seeded, 1 = user-added)
+    created_at      TEXT
+  Seeded with 8 default types on first startup.
+
+TABLE: sessions
+  Purpose: One row per detection session (start -> stop)
+  Columns:
+    id              INTEGER PRIMARY KEY AUTOINCREMENT
+    input_type      TEXT (always "webcam" for now)
+    selected_types  TEXT (JSON array of selected BFRB names)
+    selection_mode  TEXT ("multi" or "single")
+    start_time      TEXT (ISO datetime)
+    end_time        TEXT (NULL while session is live)
+    total_detections   INTEGER
+    total_confirmed    INTEGER (user said "yes, correct")
+    total_rejected     INTEGER (user said "no, false alarm")
+    notes           TEXT
+    created_at      TEXT
+
+TABLE: detections
+  Purpose: One row per detected BFRB event
+  Columns:
+    id                INTEGER PRIMARY KEY AUTOINCREMENT
+    session_id        INTEGER NOT NULL (FK -> sessions.id)
+    bfrb_type         TEXT NOT NULL (e.g., "Nail Biting")
+    frame_number      INTEGER
+    timestamp_ms      INTEGER (ms since session start)
+    confidence_score  REAL (0.0 to 1.0)
+    smoothed_distance REAL (hand-face distance)
+    bfrb_score        REAL (multi-signal score)
+    ml_score          REAL (ML classifier probability)
+    fused_score       REAL (late fusion score)
+    hand_pose         TEXT (pinch_grip, fist, pointing, etc.)
+    user_confirmed    INTEGER (1=yes, 0=no, NULL=no feedback)
+    feedback_time     TEXT
+    detected_at       TEXT
+
+TABLE: calibrations
+  Purpose: Per-session adaptive threshold measurements
+  Columns:
+    session_id        INTEGER PRIMARY KEY (FK -> sessions.id)
+    baseline_distance REAL (hand far from face)
+    touch_distance    REAL (hand touching face)
+    alpha             REAL (blending parameter, default 0.3)
+    threshold         REAL (computed: touch + alpha * (baseline - touch))
+    extra             TEXT (JSON for additional data)
+    created_at        TEXT
+
+TABLE: user_feedback
+  Purpose: Explicit yes/no feedback on each detection
+  Columns:
+    id              INTEGER PRIMARY KEY AUTOINCREMENT
+    detection_id    INTEGER NOT NULL (FK -> detections.id)
+    session_id      INTEGER NOT NULL (FK -> sessions.id)
+    is_accurate     INTEGER (1=correct detection, 0=false alarm)
+    bfrb_type       TEXT
+    confidence_at   REAL (what the confidence was when shown)
+    response_time_ms INTEGER (how long user took to respond)
+    created_at      TEXT
+
+TABLE: pilot_trials
+  Purpose: Structured ground-truth collection for evaluation
+  Columns:
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT
+    session_id         INTEGER NOT NULL (FK -> sessions.id)
+    participant_id     TEXT (e.g., "P01")
+    target_gesture     TEXT (which BFRB to perform)
+    expected_count     INTEGER
+    duration_sec       INTEGER (trial length)
+    start_time         TEXT
+    end_time           TEXT
+    actual_count       INTEGER (auto-detected count)
+    true_positive      INTEGER
+    false_positive     INTEGER
+    false_negative     INTEGER
+    notes              TEXT
+    metrics_json       TEXT (JSON: precision, recall, F1)
+    created_at         TEXT
+
+TABLE: telemetry
+  Purpose: Per-frame structured logging for reproducibility
+  Columns:
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT
+    session_id         INTEGER NOT NULL (FK -> sessions.id)
+    timestamp_ms       INTEGER
+    payload_json       TEXT (JSON blob with all frame data)
+    created_at         TEXT
+
+INDEXES:
+  - idx_detections_session ON detections(session_id)
+  - idx_detections_type ON detections(bfrb_type)
+  - idx_detections_time ON detections(detected_at)
+  - idx_feedback_detection ON user_feedback(detection_id)
+  - idx_feedback_session ON user_feedback(session_id)
+  - idx_pilot_session ON pilot_trials(session_id)
+  - idx_telemetry_session ON telemetry(session_id)
+  - idx_telemetry_time ON telemetry(timestamp_ms)
+
+RELATIONSHIPS:
+  sessions 1---* detections (one session has many detections)
+  detections 1---1 user_feedback (each detection can have one feedback)
+  sessions 1---1 calibrations (each session has at most one calibration)
+  sessions 1---* pilot_trials (one session can have multiple trials)
+  sessions 1---* telemetry (one session has many telemetry frames)
+  users 1---* onboarding_responses (one user has many responses)
+
+================================================================================
+7. BACKEND ARCHITECTURE (Flask API)
+================================================================================
+
+The Flask backend (app.py, 1,350 lines) serves three roles:
+  1. Web server: serves HTML pages (login, main app)
+  2. REST API: 20+ JSON endpoints for CRUD operations
+  3. WebSocket server: real-time ML predictions via Socket.IO
+
+The app is organized into sections:
+  - Database setup (init_db, auto-migration)
+  - Auth helpers (hash_password, verify_password, login_required decorator)
+  - Auth routes (/api/auth/*)
+  - Onboarding routes (/api/onboarding)
+  - BFRB types routes (/api/bfrb-types)
+  - Session routes (/api/sessions)
+  - Detection routes (/api/detections)
+  - Feedback routes (/api/feedback)
+  - Stats routes (/api/stats/*)
+  - ML classifier routes (/api/predict, /api/model/info)
+  - Calibration routes (/api/calibrate)
+  - Bout detection routes (/api/bouts/*)
+  - Pilot study routes (/api/pilot/*)
+  - Telemetry routes (/api/telemetry)
+  - CSV export routes (/api/export/*)
+  - PWA routes (/manifest.json, /service-worker.js)
+  - WebSocket event handlers (predict_frame, telemetry_frame, ping_latency)
+
+ERROR HANDLING:
+  Every endpoint validates input and returns structured JSON errors:
+    {"error": "description of what went wrong"}
+  with appropriate HTTP status codes (400, 401, 404, 409, 503).
+
+================================================================================
+8. AUTHENTICATION SYSTEM
+================================================================================
+
+HOW PASSWORD HASHING WORKS:
+
+We NEVER store passwords in plaintext. Instead:
+
+  Registration:
+    1. Generate a random 16-byte salt: salt = secrets.token_hex(16)
+    2. Concatenate salt + password: combined = salt + "mypassword123"
+    3. Hash with SHA-256: hash = sha256(combined)
+    4. Store as "salt:hash" in the database
+
+  Login:
+    1. Look up user by username or email
+    2. Extract the salt from the stored hash: salt = stored.split(":")[0]
+    3. Recompute: hash = sha256(salt + entered_password)
+    4. Compare with stored hash
+    5. If match -> login success; if not -> "Invalid credentials"
+
+WHY SALTING:
+  Without salt, two users with the same password would have the same hash.
+  An attacker with a "rainbow table" (precomputed hash -> password mapping)
+  could crack them instantly. The random salt makes each hash unique.
+
+SESSION MANAGEMENT:
+  Flask uses server-side sessions. After login:
+    session["user_id"] = user.id
+    session["username"] = user.username
+
+  The @login_required decorator checks for session["user_id"] on every
+  protected route. If not present, redirects to /login.
+
+================================================================================
+9. ONBOARDING QUESTIONNAIRE
+================================================================================
+
+After creating an account and signing in for the first time, users see a
+full-screen overlay with 6 questions:
+
+  Q1: Which BFRBs do you experience? (multi-select chips)
+      Options: Hair Pulling, Nail Biting, Skin Picking, Nose Picking,
+               Lip Picking, Face Touching, Forehead Touching, Cheek Touching
+
+  Q2: How often do these behaviors occur? (dropdown)
+      Options: Rarely, Sometimes, Often, Very Often, Almost Constantly
+
+  Q3: What triggers your BFRBs? (multi-select chips)
+      Options: Stress, Boredom, Anxiety, Deep Focus, Tiredness, Not sure
+
+  Q4: What is your primary goal? (dropdown)
+      Options: Increase awareness, Reduce frequency, Track patterns,
+               Research/academic, Clinical/therapy support
+
+  Q5: Alert preferences (dropdown)
+      Options: Visual only, Visual + sound, Gentle, Silent tracking
+
+  Q6: Anything else? (free text)
+
+After saving, the selected BFRBs automatically become the detection targets
+in the main app (pre-selecting those checkboxes).
+
+================================================================================
+10. DETECTION PIPELINE (THE CORE ALGORITHM)
+================================================================================
+
+The detection pipeline runs on EVERY video frame (~30 FPS). Here's what
+happens in each frame, in order:
+
+STAGE 1: ONE EURO FILTER (landmark smoothing)
+  MediaPipe landmarks jitter frame-to-frame. The One Euro Filter is an
+  adaptive low-pass filter that smooths these jitters while preserving
+  fast movements. It applies separately to each landmark coordinate.
+
+  Math:
+    x_hat[i] = alpha * x[i] + (1 - alpha) * x_hat[i-1]
+    alpha = 1 / (1 + tau / (dt * fc))
+    fc = min_cutoff + beta * |dx/dt|
+
+  At low speed (hand stationary) -> heavy smoothing (reduces jitter)
+  At high speed (hand moving fast) -> light smoothing (preserves motion)
+
+STAGE 2: MULTI-ZONE FACE DETECTION (13 anatomical regions)
+  Instead of using single landmark points (e.g., "nose = landmark #1"),
+  we define 13 face zones, each represented by the centroid (average
+  position) of 5-10 nearby landmarks:
+
+  Zone              Landmark IDs (from MediaPipe FaceMesh)
+  forehead          10, 67, 109, 338, 297, 151
+  left_temple       21, 71, 162, 139, 156
+  right_temple      251, 301, 389, 368, 383
+  left_eyebrow      70, 63, 105, 66, 107, 55, 65, 52, 53
+  right_eyebrow     336, 296, 334, 293, 300, 285, 295, 282, 283
+  nose_bridge       168, 6, 197, 195
+  nose_tip          1, 4, 5, 19, 94, 2
+  left_cheek        50, 101, 36, 205, 187, 123, 116, 117, 118, 234
+  right_cheek       280, 330, 266, 425, 411, 352, 345, 346, 347, 454
+  upper_lip         0, 11, 12, 13, 37, 267, 39, 269, 40, 270
+  lower_lip         14, 15, 16, 17, 84, 314, 86, 316, 87, 317
+  chin              152, 175, 396, 369, 377, 148, 176, 140, 171, 199
+  jawline_left      172, 136, 150, 149, 176, 132, 58, 215
+
+  Centroid = (mean_x, mean_y, mean_z) of all landmarks in the zone.
+  All distances are normalized by face width (distance between landmarks
+  234 and 454 = left cheek to right cheek).
+
+STAGE 3: HAND POSE CLASSIFIER
+  Classifies the hand into one of 5 poses:
+    pinch_grip  -> thumb + index touching (hair pulling, skin picking)
+    curled      -> all fingers partially bent (scratching)
+    pointing    -> index extended, others curled (nose picking, lip picking)
+    fist        -> all fingers fully curled (not a BFRB)
+    open_hand   -> all fingers extended (face touching, or resting)
+
+  Uses finger curl angles (angle at PIP joint) and thumb-index tip distance.
+
+STAGE 4: 4-STATE RULE ENGINE
+  The detection progresses through 4 states:
+
+  IDLE (hand not near face)
+    -> Transitions to PROXIMITY when hand enters proximity zone
+
+  PROXIMITY (hand is near face, but not long enough)
+    -> Returns to IDLE if hand moves away
+    -> Transitions to DWELL after 1,200ms sustained proximity
+
+  DWELL (hand has been near face for 1.2 seconds)
+    -> Returns to IDLE if hand moves away
+    -> Transitions to BFRB after 2,500ms total + score threshold met
+
+  BFRB (confirmed BFRB detection!)
+    -> Exits to DWELL if score drops below threshold
+    -> Exits to IDLE if hand moves away for 600ms
+
+  The 2,500ms requirement means you must have your hand near your face
+  for at least 2.5 continuous seconds before it triggers. This prevents
+  false alarms from quick face touches, scratching an itch, etc.
+
+STAGE 5: MULTI-SIGNAL BFRB SCORE
+  (See section 15 for the detailed math)
+
+STAGE 6: ML CLASSIFIER
+  (See section 11 for the detailed ML pipeline)
+
+STAGE 7: LATE FUSION
+  (See section 13 for the math)
+
+STAGE 8: ADAPTIVE THRESHOLD
+  (See section 14 for the math)
+
+STAGE 9: IEEE TELEMETRY
+  Every frame's data is logged in a structured JSON format and batched
+  to the server every 2 seconds. This creates a complete audit trail
+  for reproducibility.
+
+================================================================================
+11. MACHINE LEARNING PIPELINE (DETAILED)
+================================================================================
+
+TRAINING DATA:
+  Kaggle Competition: "CMI - Detect Behavior with Sensor Data"
+  - 80 participants wearing wrist-mounted sensor devices
+  - 574,945 total sensor readings
+  - 8,151 labeled behavioral sequences
+  - 18 gesture types: 8 BFRB-like + 10 normal controls
+  - Class distribution: 5,272 BFRB (64.7%) / 2,879 non-BFRB (35.3%)
+
+SENSOR MODALITIES IN THE DATA:
+  - Accelerometer (3-axis): measures wrist acceleration/movement
+  - Gyroscope (3-axis): measures wrist rotation speed
+  - Thermopile (5 thermal zones): measures heat (hand near face = warmer)
+  - Time-of-Flight (5 depth sensors): measures distance to nearest surface
+  - Quaternion: 4D rotation orientation
+
+MODEL SELECTION:
+  Random Forest Classifier (200 decision trees)
+
+  Why Random Forest?
+  1. Tabular data (16 numeric features) -> RF is state-of-the-art for tabular
+  2. Interpretable (can see feature importance)
+  3. No hyperparameter sensitivity (works well with defaults)
+  4. Fast inference (<10ms per prediction)
+  5. Handles class imbalance well with balanced class weights
+
+TRAINING PROCESS:
+  1. Load raw Kaggle CSV data (574,945 rows)
+  2. Group by sequence (8,151 sequences)
+  3. For each sequence, compute 16 aggregate features (see section 12)
+  4. Normalize all features to [0, 1] using MinMaxScaler
+  5. Train Random Forest with 5-fold cross-validation
+  6. Evaluate with Macro F1 (not accuracy, because of class imbalance)
+  7. Save model as bfrb_model.pkl, scaler as scaler.pkl
+  8. Save feature metadata as feature_meta.json
+
+EVALUATION:
+  - 5-fold cross-validation accuracy: ~77%
+  - Macro F1 score: used because accuracy alone is misleading with
+    imbalanced classes (a model that always predicts "BFRB" gets 64.7%
+    accuracy but is useless)
+
+================================================================================
+12. FEATURE ENGINEERING (THE MATH)
+================================================================================
+
+The key insight: BFRBs produce similar patterns whether measured by wrist
+sensors or by camera. Both capture the SAME underlying behavior — just
+through different modalities.
+
+The 16 features bridge the two modalities:
+
+FROM ACCELEROMETER -> HAND VELOCITY (camera equivalent):
+  Feature 1: acc_mag_mean  = mean(hand_velocity_per_frame)
+  Feature 2: acc_mag_std   = std(hand_velocity_per_frame)
+  Feature 3: acc_mag_max   = max(hand_velocity_per_frame)
+
+  hand_velocity = sqrt((x[t] - x[t-1])^2 + (y[t] - y[t-1])^2)
+  Normalized by: velocity_max = 0.15 (empirically determined)
+
+  In Kaggle: accelerometer measures wrist movement intensity
+  In camera: we compute frame-to-frame wrist displacement from MediaPipe
+
+FROM GYROSCOPE -> PALM ROTATION (camera equivalent):
+  Feature 4: rot_speed_mean = mean(palm_rotation_per_frame)
+
+  Palm normal vector = cross product of two palm vectors:
+    u = landmark[5] - landmark[0]  (index MCP - wrist)
+    v = landmark[17] - landmark[0] (pinky MCP - wrist)
+    normal = u x v (cross product)
+  Rotation = arccos(dot(normal[t], normal[t-1]))
+  Normalized by: rotation_max = pi
+
+FROM THERMOPILE -> HAND-FACE OVERLAP (camera equivalent):
+  Feature 5: thm_mean = mean(overlap_fraction_per_frame)
+  Feature 6: thm_max  = max(overlap_fraction_per_frame)
+
+  overlap = (number of fingertips inside face bounding box) / 5
+  Fingertips checked: landmarks 4 (thumb), 8 (index), 12 (middle),
+                      16 (ring), 20 (pinky)
+
+  In Kaggle: thermopile measures heat (closer to face = more heat)
+  In camera: we check how many fingertips are within the face rectangle
+
+FROM TIME-OF-FLIGHT -> ANATOMICAL DISTANCES (camera equivalent):
+  Features 7-16: five distance pairs (min and mean over the window)
+
+  ToF1 (wrist to nose):
+    Feature 7:  tof1_min_mean  = min(dist(wrist, nose_tip) per frame)
+    Feature 8:  tof1_mean_mean = mean(dist(wrist, nose_tip) per frame)
+
+  ToF2 (index fingertip to mouth):
+    Feature 9:  tof2_min_mean  = min(dist(index_tip, upper_lip) per frame)
+    Feature 10: tof2_mean_mean = mean(dist(index_tip, upper_lip) per frame)
+
+  ToF3 (thumb tip to cheek):
+    Feature 11: tof3_min_mean  = min(dist(thumb_tip, left_cheek) per frame)
+    Feature 12: tof3_mean_mean = mean(dist(thumb_tip, left_cheek) per frame)
+
+  ToF4 (palm center to forehead):
+    Feature 13: tof4_min_mean  = min(dist(palm, forehead) per frame)
+    Feature 14: tof4_mean_mean = mean(dist(palm, forehead) per frame)
+
+  ToF5 (wrist to chin):
+    Feature 15: tof5_min_mean  = min(dist(wrist, chin) per frame)
+    Feature 16: tof5_mean_mean = mean(dist(wrist, chin) per frame)
+
+  All distances normalized by face_width (landmark 234 to 454).
+  All features clipped to [0, 1] range (distance_max = 0.8).
+
+SLIDING WINDOW:
+  Features are computed over a 1.5-second sliding window.
+  At 30 FPS, this is ~45 frames.
+  The window requires at least 8 frames before producing features.
+  As new frames arrive, old frames outside the 1.5s window are dropped.
+
+================================================================================
+13. LATE MULTIMODAL FUSION (THE MATH)
+================================================================================
+
+Late fusion combines two independent detection scores:
+  1. Rule-based score (from the 4-state machine + multi-signal scoring)
+  2. ML score (probability from Random Forest classifier)
+
+Formula:
+  fused_score = w_ml * P(BFRB|ML) + (1 - w_ml) * rule_score
+
+Where:
+  w_ml = 0.6 (60% weight on ML, 40% on rule-based)
+  P(BFRB|ML) = probability output from Random Forest (.predict_proba)
+  rule_score = bfrbScore from the multi-signal scoring (0.0 to 1.0)
+
+WHY LATE FUSION:
+  "Late fusion" means we let each system make its own prediction first,
+  then combine them. The alternative ("early fusion") would be to feed
+  all features into one model, but late fusion is more robust because:
+  - If the ML model fails, the rule-based system still works
+  - If the rule-based system has false positives, ML can suppress them
+  - The weight (0.6/0.4) can be tuned per user
+
+DECISION RULE:
+  if fused_score >= 0.5: decision = "BFRB"
+  if fused_score < 0.5:  decision = "No BFRB"
+
+For database logging, a detection event fires when:
+  (a) the 4-state machine is in BFRB state, OR
+  (b) the fused_score >= 0.80 (very high ML confidence)
+
+================================================================================
+14. ADAPTIVE THRESHOLD CALIBRATION (THE MATH)
+================================================================================
+
+Different users sit at different distances from the camera, which changes
+all proximity thresholds. The calibration wizard measures two reference
+points and derives a personalized threshold.
+
+PROCESS:
+  Step 1: Measure "far" baseline
+    User holds hand away from face for 2.5 seconds
+    baseline = median of the middle 60% of distance samples
+    (The middle 60% = trim outliers: drop lowest 20% and highest 20%)
+
+  Step 2: Measure "touch" distance
+    User touches forehead for 2.5 seconds
+    touch = median of the middle 60% of distance samples
+
+  Step 3: Compute threshold
+    threshold = touch + alpha * (baseline - touch)
+
+    Where alpha = 0.3 (30% of the way from touch to baseline)
+
+    This means: the threshold is set 30% above the touching distance.
+    Any hand position closer than this is considered "proximity".
+
+EXAMPLE:
+  If baseline = 0.85 (hand far) and touch = 0.12 (hand touching face):
+    threshold = 0.12 + 0.3 * (0.85 - 0.12)
+    threshold = 0.12 + 0.3 * 0.73
+    threshold = 0.12 + 0.219
+    threshold = 0.339
+
+  So any normalized distance < 0.339 triggers proximity detection.
+
+================================================================================
+15. THE BFRB SCORE FORMULA
+================================================================================
+
+The BFRB score combines 11 signals into a single 0.0-1.0 number:
+
+  score = sum(weight[i] * signal[i])
+
+Where each signal is either binary (0 or 1) or continuous (0.0 to 1.0):
+
+  Signal              Weight   Type        Description
+  proximity           0.10     binary      Is hand within proximity zone?
+  proximityStrength   0.08     continuous   How close (0 = far, 1 = touching)
+  dwellTime           0.16     binary      Has hand been near face > 1.2s?
+  fingerCurl          0.12     binary      Are fingers curled (<=2 extended)?
+  pinchStrength       0.10     binary      Is hand in pinch or cluster grip?
+  microOscillation    0.08     binary      Is there repetitive micro-motion?
+  notEating           0.14     binary      Is user NOT eating? (hard veto)
+  notResting          0.10     binary      Is user NOT resting? (hard veto)
+  palmOrientation     0.05     binary      Are fingertips aimed at face?
+  recentHistory       0.03     binary      Were there recent detections?
+  velocitySlow        0.04     binary      Is hand moving slowly?
+
+TOTAL WEIGHTS: 1.00
+
+THRESHOLD: score must reach 0.58 to trigger BFRB state.
+
+The "notEating" and "notResting" signals act as hard negatives:
+  - If eating is detected: score loses 0.14 (eating blocks BFRB)
+  - If resting is detected: score loses 0.10 (resting blocks BFRB)
+
+This prevents false positives when someone is eating lunch or resting
+their chin on their hand.
+
+================================================================================
+16. STATE MACHINE
+================================================================================
+
+The detector uses a 4-state machine with timing gates:
+
+  IDLE ----[hand enters proximity zone]----> PROXIMITY
+  PROXIMITY ----[1,200ms elapsed]----> DWELL
+  PROXIMITY ----[hand moves away]----> IDLE
+  DWELL ----[2,500ms total + score >= 0.58]----> BFRB
+  DWELL ----[hand moves away]----> IDLE
+  BFRB ----[score drops below 0.58 * 0.75 = 0.435]----> DWELL
+  BFRB ----[hand away for 600ms]----> IDLE
+
+Key timing parameters:
+  PROXIMITY_RATIO = 0.28 (hand must be within 28% of face-width)
+  DWELL_MS = 1,200ms (1.2 seconds before suspecting BFRB)
+  BFRB_MS = 2,500ms (2.5 seconds total before confirmed BFRB)
+  EXIT_MS = 600ms (0.6 seconds away before exiting BFRB)
+
+This means: to trigger a BFRB detection, your hand must be within 28%
+of your face width (very close — essentially touching) for at least
+2.5 continuous seconds, AND the multi-signal score must exceed 0.58.
+
+================================================================================
+17. FALSE POSITIVE FILTERING
+================================================================================
+
+The system has two explicit false positive filters:
+
+EATING DETECTION:
+  Eating is detected when ALL of these are true:
+  - Mouth is WIDE open (> 1.5x normal threshold)
+  - Hand is near mouth (index tip to upper lip < 0.30 face-widths)
+  - Wrist is below the mouth (approaching from below, like with a fork)
+  - Hand is open palm (4+ fingers extended, like holding utensil)
+
+  When eating is detected, BFRB detection is suppressed.
+
+RESTING DETECTION:
+  Resting (chin on hand) is detected when ALL of these are true:
+  - Hand is stationary (micro-variance < threshold)
+  - Hand is open palm (4+ fingers extended)
+  - No pinch or cluster grip
+  - No recent BFRB detections in last 10 seconds
+
+  When resting is detected, BFRB detection is suppressed.
+
+================================================================================
+18. FRONTEND UI ARCHITECTURE
+================================================================================
+
+The frontend is a single HTML file (3,300+ lines) with embedded CSS and JS.
+
+THREE PAGE VIEWS (tab-navigated):
+  1. Dashboard: main detection interface
+     - Stats row (FPS, detections, BFRB time %, score, accuracy, timer)
+     - Live video feed with MediaPipe overlays
+     - Controls (start/stop, calibrate, pilot, export, checkboxes)
+     - BFRB type selector (8 types, multi/single mode)
+     - Detection status sidebar (confidence, signals, distances)
+     - Bout aggregation panel
+     - State history visualization (30-frame color dots)
+     - Event log (recent detections with feedback buttons)
+
+  2. Session HUD: analytics dashboard
+     - Daily detections bar chart (last 30 days)
+     - Detection by type doughnut chart
+     - Current session timeline scatter plot
+     - Accuracy chart (confirmed vs false alarms by type)
+
+  3. History: session review
+     - Table of all past sessions
+     - Per-session stats (detections, confirmed, rejected, duration)
+
+NOTIFICATION SYSTEM:
+  - Full-screen overlay when BFRB detected (15-second cooldown)
+  - Yes/No feedback buttons on each notification
+  - Browser push notifications (if user grants permission)
+  - Toast notifications for system messages (auto-dismiss 3.5 seconds)
+
+================================================================================
+19. REAL-TIME WEBSOCKET TRANSPORT
+================================================================================
+
+The default HTTP path for ML predictions:
+  Client -> POST /api/predict {features: [...]} -> Server -> JSON response
+  Round-trip: ~20-50ms per request
+
+The WebSocket path (Socket.IO):
+  Client -> emit("predict_frame", {features: [...]}) -> Server
+  Server -> emit("prediction", {probability: ...}) -> Client
+  Round-trip: ~5-15ms (persistent connection, no HTTP overhead)
+
+The system tries WebSocket first. If unavailable, falls back to HTTP.
+The "Transport" signal in the sidebar shows "WS" or "HTTP".
+
+================================================================================
+20. BOUT DETECTION (CLINICAL ANALYTICS)
+================================================================================
+
+In clinical BFRB research, individual detections are grouped into "bouts"
+— a bout is a burst of the same behavior type separated by gaps.
+
+Algorithm:
+  1. Sort all detections in a session by timestamp
+  2. Walk through sequentially
+  3. If the current detection is the same type as the previous one
+     AND the gap < 5 seconds: add to current bout
+  4. If different type or gap > 5 seconds: start a new bout
+
+Each bout records:
+  - BFRB type
+  - Start time (ms)
+  - Duration (ms)
+  - Count (number of detections in the bout)
+  - Maximum confidence score
+
+This is the unit of analysis used in clinical studies.
+
+================================================================================
+21. PILOT STUDY MODE
+================================================================================
+
+For evaluating the system's accuracy in a controlled setting:
+
+  1. User configures a trial (participant ID, target gesture, expected count,
+     duration in seconds)
+  2. System starts a countdown timer
+  3. User performs the target BFRB gesture naturally
+  4. System auto-counts how many detections match the target
+  5. When timer ends, user reviews results:
+     - True Positives (correctly detected)
+     - False Positives (detected but didn't happen)
+     - False Negatives (happened but not detected)
+  6. System computes:
+     Precision = TP / (TP + FP)   "Of what we detected, how much was correct?"
+     Recall    = TP / (TP + FN)   "Of what actually happened, how much did we catch?"
+     F1        = 2 * P * R / (P + R)   "Harmonic mean of precision and recall"
+
+================================================================================
+22. PROGRESSIVE WEB APP (PWA)
+================================================================================
+
+The app is a PWA, meaning it can be "installed" on a device like a native app:
+  - manifest.json: defines app name, icons, theme colors, display mode
+  - service-worker.js: caches the app shell for offline use
+  - Cache strategy: cache-first for static assets, network-first for API calls
+
+This means the UI loads even without internet (though detection requires
+the camera and optionally the backend for ML inference).
+
+================================================================================
+23. KEY TERMS GLOSSARY
+================================================================================
+
+BFRB: Body-Focused Repetitive Behavior. Compulsive self-grooming actions.
+
+MediaPipe Holistic: Google's ML model that detects face, hand, and body
+  landmarks in real-time from video. Runs entirely in the browser.
+
+Landmark: A specific point on the face or hand detected by MediaPipe.
+  Face has 468 landmarks, hand has 21 landmarks.
+
+One Euro Filter: An adaptive low-pass filter that smooths noisy signals
+  while preserving fast movements. Named after the 1 Euro coin (the paper
+  was presented at CHI 2012 conference in Europe).
+
+Random Forest: An ensemble of decision trees. Each tree votes on the
+  classification, and the majority vote wins. "Random" because each tree
+  is trained on a random subset of features and data.
+
+Late Fusion: Combining predictions from multiple models AFTER each model
+  has made its own prediction. Contrast with "early fusion" where features
+  from multiple sources are concatenated before a single model.
+
+Macro F1: The F1 score averaged across all classes (treating each class
+  equally). Important for imbalanced datasets where accuracy is misleading.
+
+3NF (Third Normal Form): A database design principle ensuring no transitive
+  dependencies. Each non-key column depends only on the primary key.
+
+EMA (Exponential Moving Average): A smoothing technique where:
+  smoothed[t] = alpha * raw[t] + (1 - alpha) * smoothed[t-1]
+  Lower alpha = more smoothing. Higher alpha = more responsive.
+
+PWA (Progressive Web App): A web application that can be installed on a
+  device and work offline, using service workers for caching.
+
+WebSocket: A persistent bi-directional connection between client and server.
+  Unlike HTTP (request -> response), WebSocket allows both sides to send
+  messages at any time without re-establishing the connection.
+
+Socket.IO: A library that provides WebSocket-like functionality with
+  automatic fallback to HTTP long-polling if WebSocket is unavailable.
+
+Bout: A cluster of consecutive BFRB detections of the same type, separated
+  from other clusters by a time gap (default: 5 seconds).
+
+Precision: Of all events the system detected, what fraction were real BFRBs?
+  Formula: TP / (TP + FP)
+
+Recall: Of all real BFRBs that happened, what fraction did the system catch?
+  Formula: TP / (TP + FN)
+
+F1 Score: The harmonic mean of precision and recall.
+  Formula: 2 * P * R / (P + R)
+
+SHA-256: A cryptographic hash function that produces a 256-bit (64 hex char)
+  digest. Used for password hashing. One-way: you cannot reverse the hash.
+
+Salt: A random value added to a password before hashing, so that two users
+  with the same password produce different hashes.
+
+================================================================================
+24. WHAT I LEARNED
+================================================================================
+
+Technical skills:
+  - Full-stack web development (Flask + HTML/CSS/JS)
+  - Real-time computer vision in the browser (MediaPipe)
+  - Machine learning model deployment (training -> serialization -> serving)
+  - Database design (3NF normalization, SQL, migrations)
+  - WebSocket real-time communication
+  - PWA development (service workers, caching strategies)
+  - Authentication & session management
+  - RESTful API design
+
+Domain knowledge:
+  - BFRB clinical research (prevalence, treatment approaches)
+  - Multi-modal sensor data (accelerometers, gyroscopes, thermopiles)
+  - Feature engineering (bridging sensor data to camera data)
+  - Signal processing (filtering, smoothing, windowing)
+  - Detection evaluation metrics (precision, recall, F1)
+
+Project management:
+  - Planning a complex multi-component system
+  - Iterating on thresholds and parameters through testing
+  - Balancing sensitivity vs false positive rate
+  - Writing documentation for a technical audience
+
+================================================================================
+25. CHALLENGES AND HOW I SOLVED THEM
+================================================================================
+
+CHALLENGE 1: Sensor-to-Camera Domain Gap
+  Problem: Training data comes from wrist sensors, but deployment uses camera.
+  Solution: Identified 16 features that are semantically equivalent between
+  both modalities (velocity = accelerometer, distance = time-of-flight, etc.)
+  Used late fusion so rule-based detection provides a safety net.
+
+CHALLENGE 2: False Positives
+  Problem: Many normal activities look like BFRBs (eating, resting, scratching)
+  Solution: Multi-signal scoring with 11 weighted factors, explicit eating and
+  resting filters, sustained dwell time requirement (2.5 seconds), and a
+  multi-signal score threshold of 0.58.
+
+CHALLENGE 3: Different User Distances
+  Problem: Users sit at different distances from the camera, breaking thresholds
+  Solution: All distances are normalized by face width (makes them scale-
+  independent). Adaptive calibration measures personalized baseline + touch
+  distances per session.
+
+CHALLENGE 4: Real-Time Performance
+  Problem: Must process video + run detection + run ML at >20 FPS
+  Solution: One Euro filter (efficient smoothing), sliding window for ML
+  features (amortized over frames), WebSocket for low-latency ML predictions,
+  throttled inference calls (250ms on WS, 400ms on HTTP).
+
+CHALLENGE 5: User Experience
+  Problem: Technical ML system must be accessible to non-technical users
+  Solution: Clean professional UI, onboarding questionnaire, clear visual
+  alerts, yes/no feedback buttons, simple start/stop workflow.
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

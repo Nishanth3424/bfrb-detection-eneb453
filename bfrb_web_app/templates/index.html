@@ -671,14 +671,14 @@
     <div class="ob-question">
       <label>Which BFRBs do you experience? (select all that apply)</label>
       <div class="ob-checkboxes" id="ob-bfrbs">
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Hair Pulling"/>Hair Pulling</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Nail Biting"/>Nail Biting</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Skin Picking"/>Skin Picking</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Nose Picking"/>Nose Picking</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Lip Picking"/>Lip Picking</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Face Touching"/>Face Touching</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Forehead Touching"/>Forehead Touching</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="Cheek Touching"/>Cheek Touching</label>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Hair Pulling">Hair Pulling</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Nail Biting">Nail Biting</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Skin Picking">Skin Picking</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Nose Picking">Nose Picking</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Lip Picking">Lip Picking</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Face Touching">Face Touching</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Forehead Touching">Forehead Touching</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="Cheek Touching">Cheek Touching</div>
       </div>
     </div>
 
@@ -697,12 +697,12 @@
     <div class="ob-question">
       <label>What triggers your BFRBs? (select all that apply)</label>
       <div class="ob-checkboxes" id="ob-triggers">
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="stress"/>Stress</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="boredom"/>Boredom</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="anxiety"/>Anxiety</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="focus"/>Deep Focus/Concentration</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="tired"/>Tiredness</label>
-        <label class="ob-chip" onclick="this.classList.toggle('selected')"><input type="checkbox" value="unknown"/>Not sure</label>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="stress">Stress</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="boredom">Boredom</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="anxiety">Anxiety</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="focus">Deep Focus/Concentration</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="tired">Tiredness</div>
+        <div class="ob-chip" onclick="toggleChip(this)" data-value="unknown">Not sure</div>
       </div>
     </div>
 
@@ -1108,11 +1108,15 @@ function handleLogout() {
     .catch(() => { window.location.href = "/login"; });
 }
 
+function toggleChip(el) {
+  el.classList.toggle('selected');
+}
+
 function submitOnboarding() {
-  const bfrbs = Array.from(document.querySelectorAll("#ob-bfrbs .ob-chip.selected input"))
-    .map(i => i.value);
-  const triggers = Array.from(document.querySelectorAll("#ob-triggers .ob-chip.selected input"))
-    .map(i => i.value);
+  const bfrbs = Array.from(document.querySelectorAll("#ob-bfrbs .ob-chip.selected"))
+    .map(el => el.dataset.value);
+  const triggers = Array.from(document.querySelectorAll("#ob-triggers .ob-chip.selected"))
+    .map(el => el.dataset.value);
 
   const responses = {
     bfrbs: bfrbs,
@@ -1168,7 +1172,7 @@ const APP = {
   pendingNotification: null,
   detectionCooldown: false,
   lastNotifTime: 0,
-  NOTIF_COOLDOWN_MS: 8000,
+  NOTIF_COOLDOWN_MS: 15000,
   detectionLog: [],
   sessionDetections: [],
   feedbackStats: { total: 0, accurate: 0 },
@@ -2345,33 +2349,36 @@ const HAND = {
 };
 
 const BFRB_TYPES = [
-  { name: "Nail Biting",       landmarks: [HAND.INDEX_TIP, HAND.THUMB_TIP], face: FACE.UPPER_LIP,  threshold: 0.35 },
-  { name: "Nose Picking",      landmarks: [HAND.INDEX_TIP],                 face: FACE.NOSE_TIP,   threshold: 0.32 },
-  { name: "Face Touching",     landmarks: [HAND.WRIST, HAND.INDEX_TIP],     face: FACE.NOSE_TIP,   threshold: 0.45 },
-  { name: "Forehead Touching", landmarks: [HAND.WRIST, HAND.INDEX_TIP],     face: FACE.FOREHEAD,   threshold: 0.50 },
-  { name: "Cheek Touching",    landmarks: [HAND.INDEX_TIP, HAND.THUMB_TIP], face: FACE.LEFT_CHEEK, threshold: 0.38 },
-  { name: "Lip Picking",       landmarks: [HAND.INDEX_TIP],                 face: FACE.LOWER_LIP,  threshold: 0.32 },
+  { name: "Nail Biting",       landmarks: [HAND.INDEX_TIP, HAND.THUMB_TIP], face: FACE.UPPER_LIP,  threshold: 0.22 },
+  { name: "Nose Picking",      landmarks: [HAND.INDEX_TIP],                 face: FACE.NOSE_TIP,   threshold: 0.20 },
+  { name: "Face Touching",     landmarks: [HAND.WRIST, HAND.INDEX_TIP],     face: FACE.NOSE_TIP,   threshold: 0.28 },
+  { name: "Forehead Touching", landmarks: [HAND.WRIST, HAND.INDEX_TIP],     face: FACE.FOREHEAD,   threshold: 0.32 },
+  { name: "Cheek Touching",    landmarks: [HAND.INDEX_TIP, HAND.THUMB_TIP], face: FACE.LEFT_CHEEK, threshold: 0.25 },
+  { name: "Lip Picking",       landmarks: [HAND.INDEX_TIP],                 face: FACE.LOWER_LIP,  threshold: 0.20 },
 ];
 
 const PINCH_ZONES = [
-  { name: "Hair Pulling",  face: FACE.FOREHEAD,    zone: 0.90 },
-  { name: "Hair Pulling",  face: FACE.LEFT_CHEEK,  zone: 0.85 },
-  { name: "Hair Pulling",  face: FACE.RIGHT_CHEEK, zone: 0.85 },
-  { name: "Skin Picking",  face: FACE.LEFT_CHEEK,  zone: 0.65 },
-  { name: "Skin Picking",  face: FACE.RIGHT_CHEEK, zone: 0.65 },
-  { name: "Skin Picking",  face: FACE.CHIN,        zone: 0.65 },
-  { name: "Skin Picking",  face: FACE.NOSE_TIP,    zone: 0.55 },
-  { name: "Lip Picking",   face: FACE.UPPER_LIP,   zone: 0.45 },
+  { name: "Hair Pulling",  face: FACE.FOREHEAD,    zone: 0.55 },
+  { name: "Hair Pulling",  face: FACE.LEFT_CHEEK,  zone: 0.50 },
+  { name: "Hair Pulling",  face: FACE.RIGHT_CHEEK, zone: 0.50 },
+  { name: "Skin Picking",  face: FACE.LEFT_CHEEK,  zone: 0.40 },
+  { name: "Skin Picking",  face: FACE.RIGHT_CHEEK, zone: 0.40 },
+  { name: "Skin Picking",  face: FACE.CHIN,        zone: 0.40 },
+  { name: "Skin Picking",  face: FACE.NOSE_TIP,    zone: 0.35 },
+  { name: "Lip Picking",   face: FACE.UPPER_LIP,   zone: 0.30 },
 ];
 
 class BFRBDetector {
   constructor() {
-    // ── PROXIMITY & TIMING (v5 refined) ──
-    // Lowered proximity ratio: hand closer to face before we start tracking
-    this.PROXIMITY_RATIO = 0.40; this.DWELL_MS = 350; this.BFRB_MS = 700;
-    this.EXIT_MS = 450; this.VELOCITY_MAX = 0.12;
-    // Faster EMA for quicker response to real behaviors
-    this.EMA_ALPHA = 0.35; this.EMA_VEL_ALPHA = 0.25;
+    // ── PROXIMITY & TIMING (v6 — realistic clinical thresholds) ──
+    // The hand must be very close to the face (within 0.28 of face-width)
+    // and STAY there for a sustained period before we declare BFRB.
+    // DWELL_MS = how long hand must be near face before we suspect BFRB
+    // BFRB_MS  = total proximity time before confirmed BFRB (the real gate)
+    this.PROXIMITY_RATIO = 0.28; this.DWELL_MS = 1200; this.BFRB_MS = 2500;
+    this.EXIT_MS = 600; this.VELOCITY_MAX = 0.10;
+    // Slower EMA = more smoothing = less twitchy
+    this.EMA_ALPHA = 0.25; this.EMA_VEL_ALPHA = 0.20;
 
     this.state = "IDLE"; this.proximityStart = null; this.exitStart = null;
     this.smoothDist = 1.0; this.smoothVel = 0.0; this.smoothDistances = {};
@@ -2379,26 +2386,26 @@ class BFRBDetector {
 
     this.bfrbFrames = 0; this.totalFrames = 0; this.bfrbEvents = 0; this.lastWasBFRB = false;
 
-    // ── PINCH-PULL (v5 refined — easier to trigger, catches subtler pulls) ──
-    this.PINCH_THRESHOLD = 0.16; this.CLUSTER_THRESHOLD = 0.18; this.PULL_MIN_DIST = 0.18;
+    // ── PINCH-PULL (v6 — tighter, requires real pinch + pull motion) ──
+    this.PINCH_THRESHOLD = 0.22; this.CLUSTER_THRESHOLD = 0.24; this.PULL_MIN_DIST = 0.25;
     this.pinchState = "NONE"; this.pinchFaceDist = null; this.pinchZoneLabel = "";
-    this.smoothPinch = 0; this.smoothCluster = 0; this.EMA_PINCH = 0.35;
+    this.smoothPinch = 0; this.smoothCluster = 0; this.EMA_PINCH = 0.25;
     this.pinchPullActive = false; this.pinchPullLabel = ""; this.pinchPullTimer = null;
-    this.PINCH_PULL_HOLD = 1500;
+    this.PINCH_PULL_HOLD = 2000;
 
     this.smoothMouthOpen = 0; this.EMA_MOUTH = 0.25; this.MOUTH_OPEN_THRESH = 0.08;
     this.extendedCount = 0;
 
-    // ── MICRO-MOTION (v5 refined — widened ranges for picking behaviors) ──
-    this.MICRO_WINDOW = 20; this.posHistory = []; this.microVariance = 0; this.microReversals = 0;
-    this.STATIC_VAR_THRESH = 0.000015; this.PICK_VAR_MIN = 0.000020;
-    this.PICK_VAR_MAX = 0.0008; this.REVERSAL_THRESH = 0.25;
+    // ── MICRO-MOTION (v6 — tighter picking thresholds) ──
+    this.MICRO_WINDOW = 25; this.posHistory = []; this.microVariance = 0; this.microReversals = 0;
+    this.STATIC_VAR_THRESH = 0.000012; this.PICK_VAR_MIN = 0.000025;
+    this.PICK_VAR_MAX = 0.0006; this.REVERSAL_THRESH = 0.30;
     this.smoothApproachAngle = 1.0;
 
     this.eatingLikely = false; this.restingLikely = false;
-    this.bfrbScore = 0; this.BFRB_SCORE_THRESH = 0.45;
+    this.bfrbScore = 0; this.BFRB_SCORE_THRESH = 0.58;
 
-    // ── v5 NEW: Temporal persistence & confidence boosting ──
+    // ── v6: Temporal persistence & confidence boosting ──
     this.consecutiveBFRBFrames = 0;  // how many frames in a row we've been in BFRB
     this.recentBFRBCount = 0;        // detections in last 10 seconds
     this.recentBFRBTimestamps = [];  // timestamps of recent events
@@ -2525,11 +2532,11 @@ class BFRBDetector {
       ? this.pinchPullLabel
       : this._classifyType(hand, face, faceWidth);
 
-    // State machine (v5 refined — faster detection, temporal persistence)
-    // Adaptive threshold: if user has recent detections, slightly lower the bar
-    // (people tend to repeat BFRBs in bursts)
-    const adaptiveThresh = this.recentBFRBCount > 2
-      ? this.BFRB_SCORE_THRESH * 0.85
+    // State machine (v6 — realistic timing, no premature triggering)
+    // Only a very slight adaptive reduction for repeated bursts —
+    // this prevents the system from getting "jumpy" after one detection
+    const adaptiveThresh = this.recentBFRBCount > 3
+      ? this.BFRB_SCORE_THRESH * 0.92
       : this.BFRB_SCORE_THRESH;
 
     switch (this.state) {
@@ -2565,8 +2572,8 @@ class BFRBDetector {
         } else {
           this.exitStart = null;
           this.consecutiveBFRBFrames++;
-          // v5: harder to exit once established (must drop significantly)
-          if (this.bfrbScore < adaptiveThresh * 0.65) this.state = "DWELL";
+          // v6: exit BFRB if score drops below 75% of threshold
+          if (this.bfrbScore < adaptiveThresh * 0.75) { this.state = "DWELL"; this.consecutiveBFRBFrames = 0; }
         }
         break;
     }
@@ -2665,9 +2672,9 @@ class BFRBDetector {
       const wrist = hand[HAND.WRIST];
       let bestName = null, bestNorm = Infinity;
       const ZONE_THRESHOLDS = {
-        "Nail Biting": 0.35, "Lip Picking": 0.35, "Nose Picking": 0.32,
-        "Forehead Touching": 0.50, "Cheek Touching": 0.40, "Face Touching": 0.45,
-        "Hair Pulling": 0.50, "Skin Picking": 0.38,
+        "Nail Biting": 0.22, "Lip Picking": 0.22, "Nose Picking": 0.20,
+        "Forehead Touching": 0.30, "Cheek Touching": 0.25, "Face Touching": 0.28,
+        "Hair Pulling": 0.35, "Skin Picking": 0.24,
       };
       for (const [bfrb, zones] of Object.entries(BFRB_ZONE_MAP)) {
         if (!APP.selectedTypes.has(bfrb)) continue;
@@ -2748,21 +2755,21 @@ class BFRBDetector {
   }
 
   _computeBFRBScore(s) {
-    // v5 refined weights — proximity and dwell are primary drivers,
-    // micro-oscillation and finger curl are strong secondary signals,
-    // eating/resting are hard negatives (high weight blockers)
+    // v6 weights — require STRONG multi-signal evidence before triggering.
+    // proximity + dwell are prerequisites (high weight). Finger curl and
+    // pinch are the distinguishing signals. Eating/resting are hard vetoes.
     const w = {
-      proximity: .12,          // binary: is hand close?
-      proximityStrength: .10,  // graduated: HOW close (0-1)
-      dwellTime: .14,          // has it been there long enough?
-      fingerCurl: .10,         // curled fingers = manipulating
-      pinchStrength: .11,      // pinch/cluster = pulling/picking
-      microOscillation: .10,   // repetitive motion signal
-      notEating: .13,          // MUST not be eating (hard negative)
-      notResting: .08,         // MUST not be resting
-      palmOrientation: .04,    // fingertips aimed at face
-      recentHistory: .04,      // temporal boost from recent events
-      velocitySlow: .04,       // gentle motion (but not required)
+      proximity: .10,          // binary: is hand close?
+      proximityStrength: .08,  // graduated: HOW close (0-1)
+      dwellTime: .16,          // has it been there long enough? (critical gate)
+      fingerCurl: .12,         // curled fingers = manipulating (strong signal)
+      pinchStrength: .10,      // pinch/cluster = pulling/picking
+      microOscillation: .08,   // repetitive motion signal
+      notEating: .14,          // MUST not be eating (hard negative)
+      notResting: .10,         // MUST not be resting (hard negative)
+      palmOrientation: .05,    // fingertips aimed at face
+      recentHistory: .03,      // small temporal boost
+      velocitySlow: .04,       // gentle motion
     };
     let score = 0;
     for (const k in w) {
@@ -2942,8 +2949,8 @@ function updateUI(result) {
   // === LOG DETECTION TO DATABASE ===
   // [Tier 1 / 3.1] late-fusion gate: a BFRB event fires when EITHER
   //   (a) the rule-based engine declares BFRB, OR
-  //   (b) the ML classifier's fused score is high (>=0.65)
-  const fusedTrigger = result.fusedScore != null && result.fusedScore >= 0.65;
+  //   (b) the ML classifier's fused score is very high (>=0.80)
+  const fusedTrigger = result.fusedScore != null && result.fusedScore >= 0.80;
   const shouldLog = (isBFRB || fusedTrigger) && result.bfrbType
                   && APP.sessionActive && !APP.detectionCooldown;
 
@@ -2984,8 +2991,8 @@ function updateUI(result) {
       })
       .catch(() => {});
 
-      // Cooldown to prevent spam (3 seconds between DB writes)
-      setTimeout(() => { APP.detectionCooldown = false; }, 3000);
+      // Cooldown to prevent spam (8 seconds between DB writes)
+      setTimeout(() => { APP.detectionCooldown = false; }, 8000);
     }
   }
 }

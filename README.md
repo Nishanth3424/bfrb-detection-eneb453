@@ -138,9 +138,6 @@ ENEB453/
     wireframe.png            # Wireframe screenshot
   wireframe/
     wireframe.html           # Interactive UI wireframe
-  ENEB453_Full_Project_Documentation.txt    # Full written documentation
-  ENEB453_Final_Defense_NishanthS_v2.pptx  # Presentation slides (with speaker notes)
-  build_final_ppt.py                       # Presentation generator script
 ```
 
 ## License

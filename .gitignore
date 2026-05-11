@@ -17,3 +17,6 @@ node_modules/
 *.egg-info/
 dist/
 build/
+~$*.pptx
+~$*.docx
+Thumbs.db

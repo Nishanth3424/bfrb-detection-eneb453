@@ -101,29 +101,46 @@ python app.py
 ```
 ENEB453/
   bfrb_web_app/
-    app.py                 # Flask backend (1300+ lines)
-    requirements.txt       # Python dependencies
-    transform_and_train.py # ML model training
+    app.py                   # Flask backend (1300+ lines)
+    requirements.txt         # Python dependencies
+    transform_and_train.py   # ML model training script
     model/
-      bfrb_model.pkl       # Trained Random Forest
-      scaler.pkl           # Feature scaler
-      feature_meta.json    # Feature metadata
+      bfrb_model.pkl         # Trained Random Forest model
+      scaler.pkl             # MinMaxScaler for feature normalization
+      feature_meta.json      # 16-feature metadata & mappings
     templates/
-      index.html           # Main web app UI (3300+ lines)
-      login.html           # Authentication page
+      index.html             # Main web app (3300+ lines: HTML/CSS/JS)
+      login.html             # Authentication page
     static/
-      manifest.json        # PWA manifest
-      service-worker.js    # PWA service worker
-      icon-192.png         # App icon
-      icon-512.png         # App icon
+      manifest.json          # PWA manifest
+      service-worker.js      # PWA service worker
+      icon-192.png           # App icon (192x192)
+      icon-512.png           # App icon (512x512)
+    report_assets/           # ML evaluation outputs
+      confusion_matrix.png   # Model confusion matrix
+      roc_curve.png          # ROC curve
+      feature_importances.png # Random Forest feature importances
+      class_distribution.png # Training data class balance
+      feature_distributions.png
+      feature_mapping_diagram.png
+      kaggle_approach_report.pdf
   database/
-    schema.sql             # MySQL schema (reference)
-    seed.sql               # Sample data
-    demo_queries.sql       # Demo SQL queries
+    schema.sql               # MySQL reference schema
+    seed.sql                 # Sample seed data
+    demo_queries.sql         # Example SQL queries
+    docker-compose.yml       # Optional MySQL via Docker
+  docs/
+    index.html               # Project documentation page
   erd/
-    erd_diagram.html       # Interactive ERD
+    erd_diagram.html         # Interactive ERD visualization
+  screenshots/
+    erd.png                  # ERD screenshot
+    wireframe.png            # Wireframe screenshot
   wireframe/
-    wireframe.html         # UI mockup
+    wireframe.html           # Interactive UI wireframe
+  ENEB453_Full_Project_Documentation.txt    # Full written documentation
+  ENEB453_Final_Defense_NishanthS_v2.pptx  # Presentation slides (with speaker notes)
+  build_final_ppt.py                       # Presentation generator script
 ```
 
 ## License
